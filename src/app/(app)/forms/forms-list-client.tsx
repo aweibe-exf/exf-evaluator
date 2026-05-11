@@ -59,8 +59,14 @@ function formSettings(form: Form): FormSettings {
   return (form.settings ?? {}) as FormSettings
 }
 
+function formatShortDate(iso: string) {
+  const [y, m, d] = iso.split('-')
+  const date = new Date(Number(y), Number(m) - 1, Number(d))
+  return date.toLocaleDateString('en-US', { month: 'short', d: 'numeric' } as Intl.DateTimeFormatOptions)
+}
+
 function formatPeriod(s: FormSettings): string | null {
-  const { periodType, periodValue } = s
+  const { periodType, periodValue, periodStart, periodEnd } = s
   if (!periodType || !periodValue) return null
   if (periodType === 'month') {
     const [year, month] = periodValue.split('-')
@@ -68,6 +74,9 @@ function formatPeriod(s: FormSettings): string | null {
     return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   }
   if (periodType === 'quarter') {
+    if (periodStart && periodEnd) {
+      return `${periodValue} · ${formatShortDate(periodStart)} – ${formatShortDate(periodEnd)}`
+    }
     return periodValue
   }
   return periodValue
