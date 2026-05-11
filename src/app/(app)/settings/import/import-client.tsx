@@ -45,6 +45,12 @@ interface MappingEditorProps {
   saving: boolean
 }
 
+// Field types that are valid for the "Map to type" selector
+const VALID_FIELD_TYPES = new Set([
+  'text', 'number', 'date', 'email', 'single_choice', 'multiple_choice',
+  'scale', 'boolean', 'name', 'identifier', 'skip',
+])
+
 function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
   const schema = (job.detected_schema ?? {}) as Record<string, string>
   const rawMappings = (job.column_mappings ?? {}) as Record<string, string>
@@ -52,7 +58,13 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
   const initialPeriodValue = rawMappings._period_value ?? ''
   const initialPeriodStart = rawMappings._period_start ?? ''
   const initialPeriodEnd = rawMappings._period_end ?? ''
-  const initialMappings = Object.fromEntries(Object.entries(rawMappings).filter(([k]) => !k.startsWith('_period_')))
+
+  // Seed type overrides from detected_schema, then overlay any previously saved
+  // type overrides (values that are valid field types, not snake_case labels).
+  const savedTypeOverrides = Object.fromEntries(
+    Object.entries(rawMappings).filter(([k, v]) => !k.startsWith('_period_') && VALID_FIELD_TYPES.has(v))
+  )
+  const initialMappings: Record<string, string> = { ...schema, ...savedTypeOverrides }
 
   const [mappings, setMappings] = useState<Record<string, string>>(initialMappings)
   const [periodType, setPeriodType] = useState<'month' | 'quarter' | ''>(initialPeriodType)
@@ -61,7 +73,19 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
   const [periodEnd, setPeriodEnd] = useState(initialPeriodEnd)
   const preview = (job.preview_data ?? []) as Record<string, string>[]
 
-  const FIELD_TYPES = ['text', 'number', 'date', 'email', 'single_choice', 'multiple_choice', 'scale', 'boolean', 'name', 'identifier', 'skip']
+  const FIELD_TYPES: { value: string; label: string }[] = [
+    { value: 'skip',           label: "Don't import" },
+    { value: 'text',           label: 'Text' },
+    { value: 'number',         label: 'Number' },
+    { value: 'date',           label: 'Date' },
+    { value: 'email',          label: 'Email' },
+    { value: 'name',           label: 'Name' },
+    { value: 'identifier',     label: 'Identifier' },
+    { value: 'single_choice',  label: 'Single choice' },
+    { value: 'multiple_choice',label: 'Multiple choice' },
+    { value: 'scale',          label: 'Scale / Rating' },
+    { value: 'boolean',        label: 'Yes / No' },
+  ]
 
   // Period is complete when both start and end dates are present
   const periodComplete = !!(periodStart && periodEnd)
@@ -189,25 +213,32 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
             </tr>
           </thead>
           <tbody>
-            {Object.keys(schema).map(col => (
-              <tr key={col} className="border-b last:border-0 hover:bg-gray-50/50">
-                <td className="px-4 py-2.5 text-gray-700 font-medium truncate max-w-[200px]">{col}</td>
-                <td className="px-4 py-2.5 text-gray-400">{schema[col]}</td>
-                <td className="px-4 py-2.5">
-                  <select
-                    value={mappings[col] ?? schema[col] ?? 'text'}
-                    onChange={e => setMappings(m => ({ ...m, [col]: e.target.value }))}
-                    className="h-7 rounded-md border border-gray-200 px-2 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
-                    aria-label={`Field type for ${col}`}
-                  >
-                    {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </td>
-                <td className="px-4 py-2.5 text-gray-400 truncate max-w-[160px]">
-                  {String(preview[0]?.[col] ?? '')}
-                </td>
-              </tr>
-            ))}
+            {Object.keys(schema).map(col => {
+              const currentType = mappings[col] ?? schema[col] ?? 'text'
+              const isSkipped = currentType === 'skip'
+              return (
+                <tr key={col} className={cn('border-b last:border-0', isSkipped ? 'bg-gray-50 opacity-50' : 'hover:bg-gray-50/50')}>
+                  <td className={cn('px-4 py-2.5 font-medium truncate max-w-[200px]', isSkipped ? 'text-gray-400 line-through' : 'text-gray-700')}>{col}</td>
+                  <td className="px-4 py-2.5 text-gray-400">{schema[col]}</td>
+                  <td className="px-4 py-2.5">
+                    <select
+                      value={currentType}
+                      onChange={e => setMappings(m => ({ ...m, [col]: e.target.value }))}
+                      className={cn(
+                        'h-7 rounded-md border px-2 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400',
+                        isSkipped ? 'border-gray-200 text-gray-400' : 'border-gray-200'
+                      )}
+                      aria-label={`Field type for ${col}`}
+                    >
+                      {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-4 py-2.5 text-gray-400 truncate max-w-[160px]">
+                    {isSkipped ? '—' : String(preview[0]?.[col] ?? '')}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
