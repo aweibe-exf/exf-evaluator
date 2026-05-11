@@ -6,10 +6,13 @@ import { logAudit } from '@/lib/audit'
 
 const client = new Anthropic()
 
+const DOCUMENT_TYPES = ['narrative', 'logic_model', 'continuation', 'evaluation', 'budget', 'other'] as const
+
 const createSchema = z.object({
   program_id: z.string().min(1),
   title: z.string().min(1).max(200),
   description: z.string().max(500).optional(),
+  document_type: z.enum(DOCUMENT_TYPES).default('narrative'),
   starts_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   ends_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   // Either a PDF as base64, or plain text pasted directly
@@ -60,7 +63,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await supabase
     .from('program_narratives')
-    .select('id, title, description, file_name, starts_at, ends_at, created_at, created_by')
+    .select('id, title, description, document_type, file_name, starts_at, ends_at, created_at, created_by')
     .eq('program_id', programId)
     .order('starts_at', { ascending: false })
 
@@ -78,7 +81,7 @@ export async function POST(request: Request) {
   const parsed = createSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { program_id, title, description, starts_at, ends_at, file_name, file_base64, text_content } = parsed.data
+  const { program_id, title, description, document_type, starts_at, ends_at, file_name, file_base64, text_content } = parsed.data
 
   if (!file_base64 && !text_content) {
     return NextResponse.json({ error: 'Either a PDF file or text content is required' }, { status: 400 })
@@ -105,6 +108,7 @@ export async function POST(request: Request) {
     program_id,
     title,
     description: description ?? null,
+    document_type: document_type ?? 'narrative',
     content,
     file_name: file_name ?? null,
     starts_at,

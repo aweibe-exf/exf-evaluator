@@ -15,9 +15,19 @@ const schema = z.object({
 
 const client = new Anthropic()
 
+const DOC_TYPE_LABELS: Record<string, string> = {
+  narrative: 'Grant Narrative',
+  logic_model: 'Logic Model',
+  continuation: 'Continuation Document',
+  evaluation: 'Evaluation Plan',
+  budget: 'Budget Narrative',
+  other: 'Supporting Document',
+}
+
 interface NarrativeContext {
   title: string
   content: string
+  document_type: string
   starts_at: string
   ends_at: string
 }
@@ -48,9 +58,12 @@ function buildPrompt(
     return `Respondent ${i + 1}:\n${answers || '  (no data)'}`
   }).join('\n\n')
 
-  // Prepend matched award narratives as grounding context
+  // Prepend matched award documents as grounding context
   const narrativeSection = narratives?.length
-    ? `AWARD NARRATIVE CONTEXT:\nThe following grant narrative(s) cover this reporting period and should be used to ground your analysis in the program's stated goals and objectives.\n\n${narratives.map(n => `[${n.title} (${n.starts_at} – ${n.ends_at})]:\n${n.content}`).join('\n\n')}\n\n---\n\n`
+    ? `AWARD CONTEXT DOCUMENTS:\nThe following documents cover this reporting period. Use them together to ground your analysis in the program's stated goals, theory of change, and intended outcomes.\n\n${narratives.map(n => {
+        const typeLabel = DOC_TYPE_LABELS[n.document_type] ?? 'Document'
+        return `[${typeLabel}: ${n.title} (${n.starts_at} – ${n.ends_at})]:\n${n.content}`
+      }).join('\n\n---\n\n')}\n\n===\n\n`
     : ''
 
   const context = `${narrativeSection}Program: ${programName}\nForm: ${formName}\nPeriod: ${dateFrom} to ${dateTo}\nTotal responses: ${submissions.length}\n\n${readable}`
@@ -128,10 +141,10 @@ export async function POST(request: Request) {
   })
   const formName = formNames.length === 1 ? formNames[0] : `${formNames.length} forms`
 
-  // Fetch award narratives that overlap the reporting period
+  // Fetch award context documents that overlap the reporting period
   const { data: narratives } = await service
     .from('program_narratives')
-    .select('title, content, starts_at, ends_at')
+    .select('title, content, document_type, starts_at, ends_at')
     .eq('program_id', program_id)
     .lte('starts_at', date_to)
     .gte('ends_at', date_from)

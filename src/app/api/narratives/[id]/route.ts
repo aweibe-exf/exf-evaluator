@@ -3,9 +3,12 @@ import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 
+const DOCUMENT_TYPES = ['narrative', 'logic_model', 'continuation', 'evaluation', 'budget', 'other'] as const
+
 const updateSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(500).nullable().optional(),
+  document_type: z.enum(DOCUMENT_TYPES).optional(),
   starts_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   ends_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 })

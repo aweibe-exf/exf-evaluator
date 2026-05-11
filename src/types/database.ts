@@ -315,6 +315,7 @@ export type Database = {
           description: string | null
           content: string
           file_name: string | null
+          document_type: string
           starts_at: string
           ends_at: string
           created_by: string | null
@@ -328,6 +329,7 @@ export type Database = {
           description?: string | null
           content: string
           file_name?: string | null
+          document_type?: string
           starts_at: string
           ends_at: string
           created_by?: string | null
@@ -341,6 +343,7 @@ export type Database = {
           description?: string | null
           content?: string
           file_name?: string | null
+          document_type?: string
           starts_at?: string
           ends_at?: string
           created_by?: string | null
