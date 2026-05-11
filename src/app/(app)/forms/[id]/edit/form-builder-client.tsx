@@ -48,20 +48,18 @@ export function FormBuilderClient({ initialForm }: Props) {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [savedAt, setSavedAt] = useState<Date | null>(null)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
   const [templateName, setTemplateName] = useState('')
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Always points to the latest save function — fixes the stale-closure
+  // bug that occurs when markDirty is memoised with an empty dep array.
+  const saveRef = useRef<() => void>(() => {})
 
   const currentPage = schema.pages[currentPageIndex] ?? schema.pages[0]
 
   const selectedField = currentPage?.fields.find(f => f.id === selectedFieldId) ?? null
-
-  const markDirty = useCallback(() => {
-    setDirty(true)
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
-    saveTimeoutRef.current = setTimeout(() => autoSave(), 3000)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save(showToast = true) {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
@@ -74,13 +72,22 @@ export function FormBuilderClient({ initialForm }: Props) {
     setSaving(false)
     if (res.ok) {
       setDirty(false)
+      setSavedAt(new Date())
       if (showToast) toast.success('Saved')
     } else {
       toast.error('Failed to save')
     }
   }
 
-  function autoSave() { save(false) }
+  // Update ref on every render so the debounced callback always calls
+  // the current version of save() with up-to-date state.
+  saveRef.current = () => save(false)
+
+  const markDirty = useCallback(() => {
+    setDirty(true)
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(() => saveRef.current(), 2000)
+  }, []) // saveRef is a ref — safe to omit from deps
 
   function openTemplateDialog() {
     setTemplateName(formName)
@@ -229,7 +236,12 @@ export function FormBuilderClient({ initialForm }: Props) {
             {cfg.label}
           </span>
           {saving && <span className="text-[12px] text-gray-400 flex-shrink-0" aria-live="polite">Saving…</span>}
-          {dirty && !saving && <span className="text-[12px] text-gray-400 flex-shrink-0" aria-live="polite">Unsaved</span>}
+          {!saving && dirty && <span className="text-[12px] text-amber-500 flex-shrink-0" aria-live="polite">Unsaved changes</span>}
+          {!saving && !dirty && savedAt && (
+            <span className="text-[12px] text-gray-400 flex-shrink-0" aria-live="polite">
+              Saved {savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <Button

@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { CheckCircle2, UserPlus, Users, CheckSquare, Square, Flag, RotateCcw, Clock } from 'lucide-react'
+import { CheckCircle2, UserPlus, Users, CheckSquare, Square, Flag, RotateCcw, Clock, BookmarkCheck, Loader2 } from 'lucide-react'
 import type { FormSchema, FormField, FormPage, LogicRule, LogicCondition } from '@/types/forms'
 
 interface Props {
@@ -22,6 +22,10 @@ interface Props {
   brandColor: string
   confirmationMessage?: string
   redirectUrl?: string
+  /** Pre-existing draft submission ID for this token, if any */
+  draftId?: string
+  /** Pre-filled data from the saved draft */
+  draftData?: Record<string, unknown>
 }
 
 type RendererMode = 'filling' | 'delegated' | 'returned' | 'collaboration' | 'submitted' | 'collaborator-done'
@@ -289,13 +293,15 @@ function deriveMode(meta: Record<string, unknown>): RendererMode {
 export function FormRenderer({
   formId, formName, schema, token, tokenId, tokenMetadata,
   respondentEmail, programName, brandColor, confirmationMessage, redirectUrl,
+  draftId: initialDraftId, draftData,
 }: Props) {
   const initialMode = deriveMode(tokenMetadata)
 
-  // Pre-fill data from metadata for collaboration/returned modes
+  // Pre-fill data: draft → collaboration prefill → returned merged data → empty
   const [data, setData] = useState<Record<string, unknown>>(() => {
     if (initialMode === 'returned') return (tokenMetadata.mergedData as Record<string, unknown>) ?? {}
     if (initialMode === 'collaboration') return (tokenMetadata.prefillData as Record<string, unknown>) ?? {}
+    if (draftData && Object.keys(draftData).length > 0) return draftData
     return {}
   })
 
@@ -303,6 +309,12 @@ export function FormRenderer({
   const [pageIndex, setPageIndex] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Draft saving
+  const [draftId, setDraftId] = useState<string | undefined>(initialDraftId)
+  const [savingDraft, setSavingDraft] = useState(false)
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(initialDraftId ? new Date() : null)
+  const restoredFromDraft = !!(initialDraftId && draftData && Object.keys(draftData).length > 0)
 
   // Delegation dialog state
   const [delegateOpen, setDelegateOpen] = useState(false)
@@ -328,6 +340,22 @@ export function FormRenderer({
 
   // All non-layout fields (for delegation flag checklist)
   const flaggableFields = schema.pages.flatMap(p => p.fields).filter(f => !LAYOUT_TYPES_SET.has(f.type))
+
+  async function saveDraft() {
+    setSavingDraft(true)
+    const res = await fetch('/api/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, form_id: formId, data, status: 'draft' }),
+    })
+    setSavingDraft(false)
+    if (res.ok) {
+      const saved = await res.json()
+      setDraftId(saved.id)
+      setDraftSavedAt(new Date())
+    }
+    // Fail silently — draft saving is best-effort
+  }
 
   function validatePage(): boolean {
     for (const field of visibleFields) {
@@ -524,6 +552,16 @@ export function FormRenderer({
         )}
       </header>
 
+      {/* Draft restored banner */}
+      {restoredFromDraft && (
+        <div className="bg-sky-50 border-b border-sky-100">
+          <div className="max-w-2xl mx-auto px-6 py-2.5 flex items-center gap-2">
+            <BookmarkCheck className="h-3.5 w-3.5 text-sky-500 flex-shrink-0" aria-hidden="true" />
+            <p className="text-[13px] text-sky-700">Your progress has been restored. Continue where you left off.</p>
+          </div>
+        </div>
+      )}
+
       {/* Collaboration banner */}
       {isCollaboration && (
         <div className="bg-amber-50 border-b border-amber-200">
@@ -612,17 +650,33 @@ export function FormRenderer({
                 ← Back
               </button>
             ) : <span />}
-            <div className="flex items-center gap-3">
-              {/* Delegate button — only in normal filling mode, not last page gated */}
+            <div className="flex items-center gap-4">
+              {/* Save + Delegate — only in normal filling mode */}
               {mode === 'filling' && (
-                <button
-                  type="button"
-                  onClick={() => setDelegateOpen(true)}
-                  className="flex items-center gap-1.5 text-[12px] text-gray-400 hover:text-gray-600 transition-colors focus:outline-none focus-visible:underline"
-                >
-                  <Users className="h-3.5 w-3.5" aria-hidden="true" />
-                  Delegate to someone
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={saveDraft}
+                    disabled={savingDraft}
+                    className="flex items-center gap-1.5 text-[12px] text-gray-400 hover:text-gray-600 transition-colors focus:outline-none focus-visible:underline disabled:opacity-50"
+                    aria-busy={savingDraft}
+                  >
+                    {savingDraft
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                      : <BookmarkCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                    }
+                    {savingDraft ? 'Saving…' : draftSavedAt ? `Saved ${draftSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Save progress'}
+                  </button>
+                  <span className="text-gray-200">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setDelegateOpen(true)}
+                    className="flex items-center gap-1.5 text-[12px] text-gray-400 hover:text-gray-600 transition-colors focus:outline-none focus-visible:underline"
+                  >
+                    <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                    Delegate to someone
+                  </button>
+                </div>
               )}
               {isLastPage ? (
                 <Button type="submit" disabled={submitting} aria-busy={submitting} className="px-8" style={{ backgroundColor: brandColor }}>

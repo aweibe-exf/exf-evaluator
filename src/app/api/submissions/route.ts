@@ -33,6 +33,29 @@ export async function POST(request: Request) {
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? undefined
 
+  // For draft saves: upsert — update existing draft for this token rather than
+  // creating a new row on every "Save progress" click.
+  if (status === 'draft') {
+    const { data: existingDraft } = await service
+      .from('submissions')
+      .select('id')
+      .eq('token_id', tokenRow.id)
+      .eq('form_id', form_id)
+      .eq('status', 'draft')
+      .maybeSingle()
+
+    if (existingDraft) {
+      const { data: updated, error: updateErr } = await service
+        .from('submissions')
+        .update({ data: data as never })
+        .eq('id', existingDraft.id)
+        .select()
+        .single()
+      if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+      return NextResponse.json(updated, { status: 200 })
+    }
+  }
+
   const { data: submission, error } = await service
     .from('submissions')
     .insert({

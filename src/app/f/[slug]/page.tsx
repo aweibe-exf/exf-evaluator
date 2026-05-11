@@ -42,6 +42,15 @@ export default async function PublicFormPage({ params, searchParams }: Props) {
   const program = form.programs as { name: string; brand_color: string | null } | null
   const schema = form.schema as unknown as FormSchema
 
+  // Check for an existing draft so we can pre-fill on return
+  const { data: existingDraft } = await service
+    .from('submissions')
+    .select('id, data')
+    .eq('token_id', tokenRow.id)
+    .eq('form_id', form.id)
+    .eq('status', 'draft')
+    .maybeSingle()
+
   return (
     <FormRenderer
       formId={form.id}
@@ -55,6 +64,8 @@ export default async function PublicFormPage({ params, searchParams }: Props) {
       brandColor={program?.brand_color ?? '#ea580c'}
       confirmationMessage={(form.settings as Record<string, unknown> | null)?.confirmation_message as string | undefined}
       redirectUrl={(form.settings as Record<string, unknown> | null)?.redirect_url as string | undefined}
+      draftId={existingDraft?.id ?? undefined}
+      draftData={(existingDraft?.data ?? undefined) as Record<string, unknown> | undefined}
     />
   )
 }
