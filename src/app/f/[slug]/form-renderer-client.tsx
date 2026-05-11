@@ -2,7 +2,12 @@
 
 import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { CheckCircle2, UserPlus } from 'lucide-react'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { CheckCircle2, UserPlus, Users, CheckSquare, Square, Flag, RotateCcw, Clock } from 'lucide-react'
 import type { FormSchema, FormField, FormPage, LogicRule, LogicCondition } from '@/types/forms'
 
 interface Props {
@@ -10,6 +15,8 @@ interface Props {
   formName: string
   schema: FormSchema
   token: string
+  tokenId: string
+  tokenMetadata: Record<string, unknown>
   respondentEmail?: string
   programName: string
   brandColor: string
@@ -17,7 +24,9 @@ interface Props {
   redirectUrl?: string
 }
 
-// ─── Logic evaluation ───────────────────────────────────────────────────────
+type RendererMode = 'filling' | 'delegated' | 'returned' | 'collaboration' | 'submitted' | 'collaborator-done'
+
+// ─── Logic evaluation ────────────────────────────────────────────────────────
 
 function evalCondition(cond: LogicCondition, data: Record<string, unknown>): boolean {
   const val = String(data[cond.fieldId] ?? '')
@@ -63,6 +72,7 @@ function getSkipTarget(page: FormPage, data: Record<string, unknown>): string | 
 // ─── Field renderer ──────────────────────────────────────────────────────────
 
 const LAYOUT_TYPES = ['section_header', 'instructional_text', 'spacer', 'hidden_field', 'page_break', 'calculated_field', 'signature'] as const
+const LAYOUT_TYPES_SET = new Set<string>(LAYOUT_TYPES)
 
 function FieldInput({ field, value, onChange }: {
   field: FormField
@@ -73,8 +83,7 @@ function FieldInput({ field, value, onChange }: {
   const strVal = String(value ?? '')
   const base = 'w-full rounded-lg border border-gray-200 px-3 text-[14px] focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent'
 
-  // Layout-only fields
-  if ((LAYOUT_TYPES as readonly string[]).includes(field.type)) {
+  if (LAYOUT_TYPES_SET.has(field.type)) {
     if (field.type === 'section_header') return <h3 className="text-[16px] font-semibold text-gray-800 pt-2">{field.label || field.content}</h3>
     if (field.type === 'instructional_text') return <p className="text-[14px] text-gray-600">{field.content || field.label}</p>
     if (field.type === 'spacer') return <div className="h-4" />
@@ -99,16 +108,7 @@ function FieldInput({ field, value, onChange }: {
       return (
         <div>
           {label}
-          <input
-            id={id}
-            type={typeMap[field.type] ?? 'text'}
-            value={strVal}
-            onChange={e => onChange(e.target.value)}
-            placeholder={field.placeholder}
-            required={field.required}
-            aria-required={field.required}
-            className={`${base} h-10`}
-          />
+          <input id={id} type={typeMap[field.type] ?? 'text'} value={strVal} onChange={e => onChange(e.target.value)} placeholder={field.placeholder} required={field.required} aria-required={field.required} className={`${base} h-10`} />
           {help}
         </div>
       )
@@ -162,16 +162,10 @@ function FieldInput({ field, value, onChange }: {
             <div className="space-y-2 mt-2">
               {(field.options ?? []).map(opt => (
                 <label key={opt.id} className="flex items-center gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    value={opt.value}
-                    checked={selected.includes(opt.value)}
-                    onChange={e => {
-                      const next = e.target.checked ? [...selected, opt.value] : selected.filter(v => v !== opt.value)
-                      onChange(next)
-                    }}
-                    className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-                  />
+                  <input type="checkbox" value={opt.value} checked={selected.includes(opt.value)} onChange={e => {
+                    const next = e.target.checked ? [...selected, opt.value] : selected.filter(v => v !== opt.value)
+                    onChange(next)
+                  }} className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500" />
                   <span className="text-[14px] text-gray-700">{opt.label}</span>
                 </label>
               ))}
@@ -207,9 +201,7 @@ function FieldInput({ field, value, onChange }: {
               {Array.from({ length: max }, (_, i) => i + 1).map(n => (
                 <label key={n} className="flex flex-col items-center gap-1 cursor-pointer">
                   <input type="radio" name={id} value={String(n)} checked={strVal === String(n)} onChange={() => onChange(String(n))} required={field.required} className="sr-only" />
-                  <span className={`w-10 h-10 flex items-center justify-center rounded-lg border text-[14px] font-medium transition-colors cursor-pointer ${strVal === String(n) ? 'bg-orange-600 border-orange-600 text-white' : 'border-gray-200 text-gray-600 hover:border-orange-400'}`}>
-                    {n}
-                  </span>
+                  <span className={`w-10 h-10 flex items-center justify-center rounded-lg border text-[14px] font-medium transition-colors cursor-pointer ${strVal === String(n) ? 'bg-orange-600 border-orange-600 text-white' : 'border-gray-200 text-gray-600 hover:border-orange-400'}`}>{n}</span>
                   {n === 1 && labels.start && <span className="text-[10px] text-gray-400 max-w-[40px] text-center leading-tight">{labels.start}</span>}
                   {n === max && labels.end && <span className="text-[10px] text-gray-400 max-w-[40px] text-center leading-tight">{labels.end}</span>}
                 </label>
@@ -238,9 +230,7 @@ function FieldInput({ field, value, onChange }: {
       const matrixVal = (value as Record<string, string> | undefined) ?? {}
       return (
         <div>
-          <p className="text-[14px] font-medium text-gray-800 mb-2">
-            {field.label}{field.required && <span className="text-red-500 ml-1" aria-hidden="true">*</span>}
-          </p>
+          <p className="text-[14px] font-medium text-gray-800 mb-2">{field.label}{field.required && <span className="text-red-500 ml-1" aria-hidden="true">*</span>}</p>
           {help}
           <div className="overflow-x-auto mt-2">
             <table className="w-full text-[13px]" role="grid" aria-label={field.label}>
@@ -256,15 +246,7 @@ function FieldInput({ field, value, onChange }: {
                     <td className="py-2.5 pr-4 text-gray-700">{row.label}</td>
                     {cols.map(col => (
                       <td key={col.id} className="py-2.5 text-center px-2">
-                        <input
-                          type={field.matrixType === 'checkbox' ? 'checkbox' : 'radio'}
-                          name={`${id}-${row.id}`}
-                          value={col.id}
-                          checked={matrixVal[row.id] === col.id}
-                          onChange={() => onChange({ ...matrixVal, [row.id]: col.id })}
-                          className="h-4 w-4 text-orange-600 border-gray-300 focus:ring-orange-500"
-                          aria-label={`${row.label} — ${col.label}`}
-                        />
+                        <input type={field.matrixType === 'checkbox' ? 'checkbox' : 'radio'} name={`${id}-${row.id}`} value={col.id} checked={matrixVal[row.id] === col.id} onChange={() => onChange({ ...matrixVal, [row.id]: col.id })} className="h-4 w-4 text-orange-600 border-gray-300 focus:ring-orange-500" aria-label={`${row.label} — ${col.label}`} />
                       </td>
                     ))}
                   </tr>
@@ -296,16 +278,47 @@ function FieldInput({ field, value, onChange }: {
 
 // ─── Main renderer ───────────────────────────────────────────────────────────
 
-export function FormRenderer({ formId, formName, schema, token, respondentEmail, programName, brandColor, confirmationMessage, redirectUrl }: Props) {
+function deriveMode(meta: Record<string, unknown>): RendererMode {
+  if (meta.isCollaboration) return 'collaboration'
+  const ds = meta.delegationStatus as string | undefined
+  if (ds === 'delegated') return 'delegated'
+  if (ds === 'returned') return 'returned'
+  return 'filling'
+}
+
+export function FormRenderer({
+  formId, formName, schema, token, tokenId, tokenMetadata,
+  respondentEmail, programName, brandColor, confirmationMessage, redirectUrl,
+}: Props) {
+  const initialMode = deriveMode(tokenMetadata)
+
+  // Pre-fill data from metadata for collaboration/returned modes
+  const [data, setData] = useState<Record<string, unknown>>(() => {
+    if (initialMode === 'returned') return (tokenMetadata.mergedData as Record<string, unknown>) ?? {}
+    if (initialMode === 'collaboration') return (tokenMetadata.prefillData as Record<string, unknown>) ?? {}
+    return {}
+  })
+
+  const [mode, setMode] = useState<RendererMode>(initialMode)
   const [pageIndex, setPageIndex] = useState(0)
-  const [data, setData] = useState<Record<string, unknown>>({})
-  const [submitted, setSubmitted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Delegation dialog state
+  const [delegateOpen, setDelegateOpen] = useState(false)
+  const [delegateEmail, setDelegateEmail] = useState('')
+  const [delegateComment, setDelegateComment] = useState('')
+  const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set())
+  const [delegating, setDelegating] = useState(false)
 
   const currentPage = schema.pages[pageIndex]
   const totalPages = schema.pages.length
   const isLastPage = pageIndex === totalPages - 1
+
+  // Flagged field IDs for collaboration/returned rendering
+  const effectiveFlaggedIds = new Set<string>(
+    (tokenMetadata.flaggedFieldIds as string[] | undefined) ?? []
+  )
 
   const setValue = useCallback((fieldId: string, val: unknown) => {
     setData(prev => ({ ...prev, [fieldId]: val }))
@@ -313,10 +326,12 @@ export function FormRenderer({ formId, formName, schema, token, respondentEmail,
 
   const visibleFields = currentPage?.fields.filter(f => isVisible(f, data)) ?? []
 
+  // All non-layout fields (for delegation flag checklist)
+  const flaggableFields = schema.pages.flatMap(p => p.fields).filter(f => !LAYOUT_TYPES_SET.has(f.type))
+
   function validatePage(): boolean {
     for (const field of visibleFields) {
-      if (!field.required) continue
-      if ((LAYOUT_TYPES as readonly string[]).includes(field.type)) continue
+      if (!field.required || LAYOUT_TYPES_SET.has(field.type)) continue
       const val = data[field.id]
       if (val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0)) return false
     }
@@ -334,6 +349,7 @@ export function FormRenderer({ formId, formName, schema, token, respondentEmail,
     setPageIndex(i => Math.min(i + 1, totalPages - 1))
   }
 
+  // Normal final submission
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validatePage()) { setError('Please fill in all required fields.'); return }
@@ -346,7 +362,7 @@ export function FormRenderer({ formId, formName, schema, token, respondentEmail,
     })
     setSubmitting(false)
     if (res.ok) {
-      setSubmitted(true)
+      setMode('submitted')
       if (redirectUrl) setTimeout(() => { window.location.href = redirectUrl }, 2000)
     } else {
       const body = await res.json().catch(() => ({}))
@@ -354,7 +370,67 @@ export function FormRenderer({ formId, formName, schema, token, respondentEmail,
     }
   }
 
-  if (submitted) {
+  // Collaborator returning the form to owner
+  async function handleCollaboratorReturn(e: React.FormEvent) {
+    e.preventDefault()
+    if (!validatePage()) { setError('Please fill in all required fields.'); return }
+    setError(null)
+    setSubmitting(true)
+    const res = await fetch(`/api/tokens/${tokenId}/return`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data }),
+    })
+    setSubmitting(false)
+    if (res.ok) {
+      setMode('collaborator-done')
+    } else {
+      const body = await res.json().catch(() => ({}))
+      setError(typeof body.error === 'string' ? body.error : 'Something went wrong. Please try again.')
+    }
+  }
+
+  // Owner delegates to collaborator
+  async function handleDelegate(e: React.FormEvent) {
+    e.preventDefault()
+    if (!delegateEmail.trim()) return
+    setDelegating(true)
+    const res = await fetch(`/api/tokens/${tokenId}/delegate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        collaboratorEmail: delegateEmail.trim(),
+        comment: delegateComment.trim() || undefined,
+        flaggedFieldIds: [...flaggedIds],
+        currentData: data,
+      }),
+    })
+    setDelegating(false)
+    if (res.ok) {
+      setDelegateOpen(false)
+      setMode('delegated')
+    } else {
+      const body = await res.json().catch(() => ({}))
+      setError(typeof body.error === 'string' ? body.error : 'Failed to delegate form')
+    }
+  }
+
+  function toggleFlag(fieldId: string) {
+    setFlaggedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(fieldId)) next.delete(fieldId); else next.add(fieldId)
+      return next
+    })
+  }
+
+  const progress = ((pageIndex + 1) / totalPages) * 100
+  const ownerEmail = tokenMetadata.ownerEmail as string | undefined
+  const collaboratorEmail = tokenMetadata.collaboratorEmail as string | undefined
+  const delegationComment = tokenMetadata.delegationComment as string | undefined
+
+  // ── Special screens ──────────────────────────────────────────────────────
+
+  if (mode === 'submitted') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
         <div className="max-w-md w-full">
@@ -368,25 +444,17 @@ export function FormRenderer({ formId, formName, schema, token, respondentEmail,
             </p>
             {redirectUrl && <p className="text-[12px] text-gray-400 mt-4">Redirecting you shortly…</p>}
           </div>
-
-          {/* Account creation CTA — shown if they have an email and aren't already logged in */}
           {respondentEmail && !redirectUrl && (
             <div className="mt-2 rounded-xl border border-orange-100 bg-orange-50 px-5 py-4">
               <div className="flex items-start gap-3">
                 <UserPlus className="h-5 w-5 text-orange-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-semibold text-gray-800 mb-0.5">Track your submissions over time</p>
-                  <p className="text-[12px] text-gray-500 mb-3">
-                    Create a free account to view all forms you&apos;ve completed in one place.
-                  </p>
-                  <a
-                    href={`/auth/login?email=${encodeURIComponent(respondentEmail)}&next=/my`}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-orange-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
-                  >
+                  <p className="text-[12px] text-gray-500 mb-3">Create a free account to view all forms you&apos;ve completed in one place.</p>
+                  <a href={`/auth/login?email=${encodeURIComponent(respondentEmail)}&next=/my`} className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-orange-700 transition-colors">
                     <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
                     Create account with {respondentEmail}
                   </a>
-                  <p className="text-[11px] text-gray-400 mt-2">We&apos;ll send you a magic link — no password needed.</p>
                 </div>
               </div>
             </div>
@@ -396,7 +464,51 @@ export function FormRenderer({ formId, formName, schema, token, respondentEmail,
     )
   }
 
-  const progress = ((pageIndex + 1) / totalPages) * 100
+  if (mode === 'collaborator-done') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+        <div className="max-w-md w-full text-center">
+          <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
+            <RotateCcw className="w-7 h-7 text-blue-600" aria-hidden="true" />
+          </div>
+          <h1 className="text-[20px] font-semibold text-gray-800 mb-2">Responses returned</h1>
+          <p className="text-[14px] text-gray-500">
+            Your responses have been sent back to {ownerEmail ?? 'the form owner'} for review and final submission. Thank you!
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (mode === 'delegated') {
+    const collab = (tokenMetadata.collaboratorEmail as string | undefined) ?? delegateEmail
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+        <div className="max-w-md w-full text-center">
+          <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+            <Clock className="w-7 h-7 text-amber-600" aria-hidden="true" />
+          </div>
+          <h1 className="text-[20px] font-semibold text-gray-800 mb-2">Waiting for response</h1>
+          <p className="text-[14px] text-gray-500">
+            You&apos;ve delegated this form to <strong>{collab}</strong>. You&apos;ll receive an email when they&apos;ve returned it to you for final review and submission.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Form filling (filling, collaboration, returned) ───────────────────────
+
+  const isCollaboration = mode === 'collaboration'
+  const isReturned = mode === 'returned'
+
+  const submitLabel = isCollaboration
+    ? `Return to ${ownerEmail ?? 'owner'}`
+    : isReturned
+      ? 'Final Submit'
+      : 'Submit'
+
+  const onSubmit = isCollaboration ? handleCollaboratorReturn : handleSubmit
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -412,15 +524,81 @@ export function FormRenderer({ formId, formName, schema, token, respondentEmail,
         )}
       </header>
 
+      {/* Collaboration banner */}
+      {isCollaboration && (
+        <div className="bg-amber-50 border-b border-amber-200">
+          <div className="max-w-2xl mx-auto px-6 py-3 flex items-start gap-2.5">
+            <Flag className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <p className="text-[13px] font-semibold text-amber-800">
+                {ownerEmail} asked for your help
+              </p>
+              {delegationComment && <p className="text-[12px] text-amber-700 mt-0.5">&ldquo;{delegationComment}&rdquo;</p>}
+              {effectiveFlaggedIds.size > 0 && (
+                <p className="text-[12px] text-amber-600 mt-0.5">
+                  {effectiveFlaggedIds.size} question{effectiveFlaggedIds.size !== 1 ? 's are' : ' is'} flagged for your response below.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Review banner */}
+      {isReturned && (
+        <div className="bg-teal-50 border-b border-teal-200">
+          <div className="max-w-2xl mx-auto px-6 py-3 flex items-start gap-2.5">
+            <CheckCircle2 className="h-4 w-4 text-teal-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <p className="text-[13px] font-semibold text-teal-800">
+                {collaboratorEmail} has returned this form for your review
+              </p>
+              <p className="text-[12px] text-teal-700 mt-0.5">
+                Their responses are highlighted below. Make any final edits and submit when ready.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="max-w-2xl mx-auto px-6 py-8">
         {totalPages > 1 && (
           <p className="text-[12px] text-gray-400 mb-5">Page {pageIndex + 1} of {totalPages} — {currentPage.title}</p>
         )}
-        <form onSubmit={handleSubmit} noValidate>
+        <form onSubmit={onSubmit} noValidate>
           <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-6">
-            {visibleFields.map(field => (
-              <FieldInput key={field.id} field={field} value={data[field.id]} onChange={val => setValue(field.id, val)} />
-            ))}
+            {visibleFields.map(field => {
+              const isFlagged = effectiveFlaggedIds.has(field.id)
+              const input = (
+                <FieldInput
+                  key={field.id}
+                  field={field}
+                  value={data[field.id]}
+                  onChange={val => setValue(field.id, val)}
+                />
+              )
+              if (!isFlagged || LAYOUT_TYPES_SET.has(field.type)) return input
+              return (
+                <div
+                  key={field.id}
+                  className={`rounded-lg border-2 px-4 pt-3 pb-4 -mx-2 ${
+                    isCollaboration
+                      ? 'border-amber-200 bg-amber-50'
+                      : 'border-teal-200 bg-teal-50'
+                  }`}
+                >
+                  <p className={`text-[11px] font-semibold mb-2.5 flex items-center gap-1 ${
+                    isCollaboration ? 'text-amber-700' : 'text-teal-700'
+                  }`}>
+                    <Flag className="h-3 w-3" aria-hidden="true" />
+                    {isCollaboration
+                      ? 'Please respond to this question'
+                      : `Answered by ${collaboratorEmail}`}
+                  </p>
+                  {input}
+                </div>
+              )
+            })}
             {visibleFields.length === 0 && (
               <p className="text-[14px] text-gray-400 text-center py-4">No fields on this page.</p>
             )}
@@ -428,22 +606,119 @@ export function FormRenderer({ formId, formName, schema, token, respondentEmail,
 
           {error && <p className="mt-3 text-[13px] text-red-600" role="alert">{error}</p>}
 
-          <div className="mt-6 flex items-center justify-between">
+          <div className="mt-6 flex items-center justify-between gap-3">
             {pageIndex > 0 ? (
               <button type="button" onClick={() => { setPageIndex(i => i - 1); setError(null) }} className="text-[13px] text-gray-500 hover:text-gray-800 transition-colors focus:outline-none focus-visible:underline">
                 ← Back
               </button>
             ) : <span />}
-            {isLastPage ? (
-              <Button type="submit" disabled={submitting} aria-busy={submitting} className="px-8" style={{ backgroundColor: brandColor }}>
-                {submitting ? 'Submitting…' : 'Submit'}
-              </Button>
-            ) : (
-              <Button type="button" onClick={handleNext} style={{ backgroundColor: brandColor }}>Next →</Button>
-            )}
+            <div className="flex items-center gap-3">
+              {/* Delegate button — only in normal filling mode, not last page gated */}
+              {mode === 'filling' && (
+                <button
+                  type="button"
+                  onClick={() => setDelegateOpen(true)}
+                  className="flex items-center gap-1.5 text-[12px] text-gray-400 hover:text-gray-600 transition-colors focus:outline-none focus-visible:underline"
+                >
+                  <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                  Delegate to someone
+                </button>
+              )}
+              {isLastPage ? (
+                <Button type="submit" disabled={submitting} aria-busy={submitting} className="px-8" style={{ backgroundColor: brandColor }}>
+                  {submitting ? 'Submitting…' : submitLabel}
+                </Button>
+              ) : (
+                <Button type="button" onClick={handleNext} style={{ backgroundColor: brandColor }}>Next →</Button>
+              )}
+            </div>
           </div>
         </form>
       </main>
+
+      {/* Delegation dialog */}
+      <Dialog open={delegateOpen} onOpenChange={setDelegateOpen}>
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto" aria-describedby="delegate-desc">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-orange-500" aria-hidden="true" />
+              Delegate to someone
+            </DialogTitle>
+            <p id="delegate-desc" className="text-[13px] text-muted-foreground mt-1">
+              They&apos;ll receive a link, see your current answers, and can fill in their portion. You&apos;ll review before final submission.
+            </p>
+          </DialogHeader>
+          <form onSubmit={handleDelegate} id="delegate-form" className="space-y-4 py-2">
+            <div>
+              <label htmlFor="delegate-email" className="text-[13px] font-medium text-gray-700 block mb-1.5">
+                Their email <span className="text-red-500" aria-hidden="true">*</span>
+              </label>
+              <Input
+                id="delegate-email"
+                type="email"
+                value={delegateEmail}
+                onChange={e => setDelegateEmail(e.target.value)}
+                placeholder="colleague@example.com"
+                required
+                autoFocus
+                className="h-9 text-[13px]"
+              />
+            </div>
+            <div>
+              <label htmlFor="delegate-comment" className="text-[13px] font-medium text-gray-700 block mb-1.5">
+                Message <span className="text-[12px] text-gray-400 font-normal">(optional)</span>
+              </label>
+              <Textarea
+                id="delegate-comment"
+                value={delegateComment}
+                onChange={e => setDelegateComment(e.target.value)}
+                placeholder="e.g. Please fill in the financial impact questions in section 3."
+                className="text-[13px] min-h-[70px]"
+              />
+            </div>
+            {flaggableFields.length > 0 && (
+              <div>
+                <p className="text-[13px] font-medium text-gray-700 mb-1.5">
+                  Flag specific questions <span className="text-[12px] text-gray-400 font-normal">(optional)</span>
+                </p>
+                <p className="text-[11px] text-gray-400 mb-2">Flagged questions are highlighted for the person you&apos;re delegating to.</p>
+                <div className="max-h-[220px] overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-50">
+                  {flaggableFields.map(f => {
+                    const checked = flaggedIds.has(f.id)
+                    return (
+                      <label key={f.id} className="flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-gray-50">
+                        <span className="flex-shrink-0 mt-0.5">
+                          {checked
+                            ? <CheckSquare className="h-4 w-4 text-orange-600" aria-hidden="true" />
+                            : <Square className="h-4 w-4 text-gray-300" aria-hidden="true" />}
+                        </span>
+                        <input type="checkbox" checked={checked} onChange={() => toggleFlag(f.id)} className="sr-only" aria-label={f.label} />
+                        <span className="text-[13px] text-gray-700 leading-snug">{f.label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                {flaggedIds.size > 0 && (
+                  <p className="text-[11px] text-orange-600 font-medium mt-1.5">{flaggedIds.size} question{flaggedIds.size !== 1 ? 's' : ''} flagged</p>
+                )}
+              </div>
+            )}
+          </form>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDelegateOpen(false)} disabled={delegating}>Cancel</Button>
+            <Button
+              type="submit"
+              form="delegate-form"
+              className="bg-orange-600 hover:bg-orange-700 gap-1.5"
+              disabled={delegating || !delegateEmail.trim()}
+              aria-busy={delegating}
+            >
+              <Users className="h-3.5 w-3.5" aria-hidden="true" />
+              {delegating ? 'Sending…' : 'Send delegation'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

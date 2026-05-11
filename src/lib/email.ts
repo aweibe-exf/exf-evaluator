@@ -62,3 +62,91 @@ export async function sendTokenEmail(params: SendTokenEmailParams): Promise<void
     throw new Error(`Mailgun error ${res.status}: ${detail}`)
   }
 }
+
+async function sendEmail(to: string, subject: string, text: string, html: string): Promise<void> {
+  if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN) {
+    console.log(`\n[EMAIL - no Mailgun key]\nTo: ${to}\nSubject: ${subject}\n${text}\n`)
+    return
+  }
+  const form = new FormData()
+  form.append('from', FROM_EMAIL)
+  form.append('to', to)
+  form.append('subject', subject)
+  form.append('text', text)
+  form.append('html', html)
+  const res = await fetch(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${Buffer.from(`api:${MAILGUN_API_KEY}`).toString('base64')}` },
+    body: form,
+  })
+  if (!res.ok) throw new Error(`Mailgun error ${res.status}: ${await res.text()}`)
+}
+
+export async function sendCollaborationEmail(params: {
+  to: string
+  ownerEmail: string
+  formName: string
+  programName: string
+  token: string
+  formSlug: string
+  expiresAt: string
+  comment?: string
+  flaggedFieldCount: number
+}): Promise<void> {
+  const { to, ownerEmail, formName, programName, token, formSlug, expiresAt, comment, flaggedFieldCount } = params
+  const link = `${APP_URL}/f/${formSlug}?token=${token}`
+  const expiry = new Date(expiresAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  const subject = `${ownerEmail} needs your help with "${formName}"`
+  const flagNote = flaggedFieldCount > 0
+    ? `${flaggedFieldCount} question${flaggedFieldCount !== 1 ? 's are' : ' is'} specifically flagged for your response.`
+    : 'Please add your responses where needed.'
+  const commentBlock = comment ? `\nMessage from ${ownerEmail}:\n"${comment}"\n` : ''
+  const text = [
+    `${ownerEmail} has asked for your help completing a form for ${programName}.`,
+    commentBlock,
+    flagNote,
+    '',
+    `Form: ${formName}`,
+    `Link: ${link}`,
+    '',
+    `This link expires on ${expiry}. Once you submit, your responses will be returned to ${ownerEmail} for final review.`,
+  ].join('\n')
+  const html = `
+<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 16px;color:#111;">
+  <h2 style="font-size:20px;margin-bottom:8px;">${ownerEmail} needs your help</h2>
+  <p style="color:#555;">They've asked you to help complete <strong>${formName}</strong> for <strong>${programName}</strong>.</p>
+  ${comment ? `<div style="background:#f9f9f9;border-left:3px solid #ea580c;padding:10px 14px;margin:16px 0;font-size:14px;color:#333;"><em>"${comment}"</em></div>` : ''}
+  <p style="font-size:14px;color:#555;">${flagNote}</p>
+  <a href="${link}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin:8px 0;">Open form</a>
+  <p style="margin-top:20px;font-size:13px;color:#888;">Expires ${expiry}. When you submit, your responses go back to ${ownerEmail} for final review — they will make the official submission.</p>
+  <p style="font-size:12px;color:#aaa;">Link: ${link}</p>
+</body></html>`
+  await sendEmail(to, subject, text, html)
+}
+
+export async function sendReturnNotificationEmail(params: {
+  to: string
+  collaboratorEmail: string
+  formName: string
+  formSlug: string
+  token: string
+}): Promise<void> {
+  const { to, collaboratorEmail, formName, formSlug, token } = params
+  const link = `${APP_URL}/f/${formSlug}?token=${token}`
+  const subject = `Your delegated form has been returned — "${formName}"`
+  const text = [
+    `${collaboratorEmail} has completed their portion of "${formName}" and returned it to you for review.`,
+    '',
+    `Open the form to review their responses, make any final edits, and submit:`,
+    link,
+  ].join('\n')
+  const html = `
+<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 16px;color:#111;">
+  <h2 style="font-size:20px;margin-bottom:8px;">Your form is ready to review</h2>
+  <p style="color:#555;"><strong>${collaboratorEmail}</strong> has filled in their responses to <strong>${formName}</strong> and returned it to you.</p>
+  <p style="color:#555;">Review their answers, make any final edits, and submit when ready.</p>
+  <a href="${link}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin:8px 0;">Review &amp; submit</a>
+  <p style="font-size:12px;color:#aaa;margin-top:16px;">Link: ${link}</p>
+</body></html>`
+  await sendEmail(to, subject, text, html)
+}

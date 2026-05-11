@@ -48,6 +48,8 @@ export default async function PublicFormPage({ params, searchParams }: Props) {
       formName={form.name}
       schema={schema}
       token={token}
+      tokenId={tokenRow.id}
+      tokenMetadata={(tokenRow.metadata ?? {}) as Record<string, unknown>}
       respondentEmail={tokenRow.email}
       programName={program?.name ?? 'Extension Foundation'}
       brandColor={program?.brand_color ?? '#ea580c'}
