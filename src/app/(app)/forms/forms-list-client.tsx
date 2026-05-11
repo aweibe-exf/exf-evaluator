@@ -137,6 +137,11 @@ export function FormsListClient() {
   const [movingToTab, setMovingToTab] = useState<{ form: Form } | null>(null)
   const [tabInput, setTabInput] = useState('')
   const [savingTab, setSavingTab] = useState(false)
+  const [renamingTab, setRenamingTab] = useState<string | null>(null)
+  const [renameTabValue, setRenameTabValue] = useState('')
+  const [renamingTabBusy, setRenamingTabBusy] = useState(false)
+  const [deletingTab, setDeletingTab] = useState<string | null>(null)
+  const [deletingTabBusy, setDeletingTabBusy] = useState(false)
 
   const canEdit = currentRole && ['super_admin', 'program_admin', 'staff'].includes(currentRole)
 
@@ -347,6 +352,54 @@ export function FormsListClient() {
     setNewTabName('')
   }
 
+  async function handleRenameTab(oldName: string, newName: string) {
+    setRenamingTabBusy(true)
+    const formsInTab = forms.filter(f => formSettings(f).tab === oldName)
+    try {
+      for (const form of formsInTab) {
+        const merged: FormSettings = { ...formSettings(form), tab: newName }
+        await fetch(`/api/forms/${form.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: merged }),
+        })
+      }
+      setCustomTabs(prev => prev.map(t => t === oldName ? newName : t))
+      if (activeTab === oldName) setActiveTab(newName)
+      toast.success(`Tab renamed to "${newName}"`)
+      await fetchForms()
+    } catch {
+      toast.error('Failed to rename tab')
+    }
+    setRenamingTabBusy(false)
+    setRenamingTab(null)
+    setRenameTabValue('')
+  }
+
+  async function handleDeleteTab(tabName: string) {
+    setDeletingTabBusy(true)
+    const formsInTab = forms.filter(f => formSettings(f).tab === tabName)
+    try {
+      for (const form of formsInTab) {
+        const merged: FormSettings = { ...formSettings(form) }
+        delete merged.tab
+        await fetch(`/api/forms/${form.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: merged }),
+        })
+      }
+      setCustomTabs(prev => prev.filter(t => t !== tabName))
+      if (activeTab === tabName) setActiveTab(ALL_FORMS_TAB)
+      toast.success(`Tab "${tabName}" deleted — forms moved to All Forms`)
+      await fetchForms()
+    } catch {
+      toast.error('Failed to delete tab')
+    }
+    setDeletingTabBusy(false)
+    setDeletingTab(null)
+  }
+
   function sortForms(items: Form[]): Form[] {
     if (sortMode === 'az') {
       return [...items].sort((a, b) => a.name.localeCompare(b.name))
@@ -406,7 +459,7 @@ export function FormsListClient() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex items-center gap-0 mb-5 border-b border-gray-200 overflow-x-auto" role="tablist" aria-label="Form tabs">
+      <div className="flex items-center mb-5 border-b border-gray-200" role="tablist" aria-label="Form tabs">
         <button
           role="tab"
           aria-selected={activeTab === ALL_FORMS_TAB}
@@ -421,23 +474,42 @@ export function FormsListClient() {
           <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" /> All Forms
         </button>
         {allTabs.map(tab => (
-          <button
-            key={tab}
-            role="tab"
-            aria-selected={activeTab === tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              'flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 transition-colors -mb-px',
-              activeTab === tab
-                ? 'border-orange-500 text-orange-600'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
+          <div key={tab} className="relative group/tab flex items-center -mb-px">
+            <button
+              role="tab"
+              aria-selected={activeTab === tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 transition-colors',
+                activeTab === tab
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
+              )}
+            >
+              {tab}
+              <span className="text-[10px] text-gray-400 ml-0.5">
+                {forms.filter(f => formSettings(f).tab === tab).length}
+              </span>
+            </button>
+            {canEdit && (
+              <div className="flex items-center gap-0.5 opacity-0 group-hover/tab:opacity-100 transition-opacity pr-1">
+                <button
+                  onClick={e => { e.stopPropagation(); setRenamingTab(tab); setRenameTabValue(tab) }}
+                  className="p-0.5 rounded text-gray-300 hover:text-gray-600 focus:outline-none"
+                  aria-label={`Rename tab ${tab}`}
+                >
+                  <Pencil className="h-2.5 w-2.5" aria-hidden="true" />
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); setDeletingTab(tab) }}
+                  className="p-0.5 rounded text-gray-300 hover:text-red-500 focus:outline-none"
+                  aria-label={`Delete tab ${tab}`}
+                >
+                  <X className="h-2.5 w-2.5" aria-hidden="true" />
+                </button>
+              </div>
             )}
-          >
-            {tab}
-            <span className="text-[10px] text-gray-400 ml-0.5">
-              {forms.filter(f => formSettings(f).tab === tab).length}
-            </span>
-          </button>
+          </div>
         ))}
         {canEdit && (
           <button
@@ -881,6 +953,68 @@ export function FormsListClient() {
               aria-busy={renamingFolderBusy}
             >
               {renamingFolderBusy ? 'Renaming…' : 'Rename'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename tab dialog */}
+      <Dialog open={!!renamingTab} onOpenChange={o => { if (!o) { setRenamingTab(null); setRenameTabValue('') } }}>
+        <DialogContent className="sm:max-w-sm" aria-describedby="rename-tab-desc">
+          <DialogHeader>
+            <DialogTitle>Rename tab</DialogTitle>
+            <p id="rename-tab-desc" className="text-[13px] text-muted-foreground mt-1">
+              All forms in &quot;{renamingTab}&quot; will move to the new tab name.
+            </p>
+          </DialogHeader>
+          <div className="py-2">
+            <label htmlFor="rename-tab-input" className="text-[13px] font-medium text-gray-700 block mb-1.5">New name</label>
+            <Input
+              id="rename-tab-input"
+              value={renameTabValue}
+              onChange={e => setRenameTabValue(e.target.value)}
+              autoFocus
+              className="h-9 text-[13px]"
+              onKeyDown={e => {
+                if (e.key === 'Enter' && renameTabValue.trim() && renameTabValue.trim() !== renamingTab) {
+                  e.preventDefault()
+                  handleRenameTab(renamingTab!, renameTabValue.trim())
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setRenamingTab(null); setRenameTabValue('') }} disabled={renamingTabBusy}>Cancel</Button>
+            <Button
+              onClick={() => renamingTab && handleRenameTab(renamingTab, renameTabValue.trim())}
+              className="bg-orange-600 hover:bg-orange-700"
+              disabled={renamingTabBusy || !renameTabValue.trim() || renameTabValue.trim() === renamingTab}
+              aria-busy={renamingTabBusy}
+            >
+              {renamingTabBusy ? 'Renaming…' : 'Rename'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete tab confirm dialog */}
+      <Dialog open={!!deletingTab} onOpenChange={o => { if (!o) setDeletingTab(null) }}>
+        <DialogContent className="sm:max-w-sm" aria-describedby="delete-tab-desc">
+          <DialogHeader>
+            <DialogTitle>Delete tab &quot;{deletingTab}&quot;?</DialogTitle>
+            <p id="delete-tab-desc" className="text-[13px] text-muted-foreground mt-1">
+              The {forms.filter(f => formSettings(f).tab === deletingTab).length} form(s) in this tab will move back to All Forms. The forms themselves won&apos;t be deleted.
+            </p>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeletingTab(null)} disabled={deletingTabBusy}>Cancel</Button>
+            <Button
+              onClick={() => deletingTab && handleDeleteTab(deletingTab)}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={deletingTabBusy}
+              aria-busy={deletingTabBusy}
+            >
+              {deletingTabBusy ? 'Deleting…' : 'Delete tab'}
             </Button>
           </DialogFooter>
         </DialogContent>
