@@ -38,6 +38,9 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  LayoutGrid,
+  X,
+  Tag,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -48,6 +51,7 @@ import type { FormSettings } from '@/types/forms'
 type Form = Database['public']['Tables']['forms']['Row']
 type StatusFilter = 'all' | 'draft' | 'active' | 'closed'
 type SortMode = 'updated' | 'az'
+const ALL_FORMS_TAB = '__all__'
 
 const statusConfig = {
   active:  { label: 'Active',  className: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
@@ -67,19 +71,26 @@ function formatShortDate(iso: string) {
 
 function formatPeriod(s: FormSettings): string | null {
   const { periodType, periodValue, periodStart, periodEnd } = s
-  if (!periodType || !periodValue) return null
-  if (periodType === 'month') {
+  // Month: "Jan 2025"
+  if (periodType === 'month' && periodValue) {
     const [year, month] = periodValue.split('-')
     const d = new Date(Number(year), Number(month) - 1, 1)
     return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   }
-  if (periodType === 'quarter') {
+  // Quarter with label: "Fall 2025 · Oct 1 – Dec 31"
+  if (periodType === 'quarter' && periodValue) {
     if (periodStart && periodEnd) {
       return `${periodValue} · ${formatShortDate(periodStart)} – ${formatShortDate(periodEnd)}`
     }
     return periodValue
   }
-  return periodValue
+  // Any period with just date range (imported, or quarter without label)
+  if (periodStart && periodEnd) {
+    return `${formatShortDate(periodStart)} – ${formatShortDate(periodEnd)}`
+  }
+  // Any period with just a value label
+  if (periodValue) return periodValue
+  return null
 }
 
 export function FormsListClient() {
@@ -112,6 +123,20 @@ export function FormsListClient() {
   // Delete folder confirm
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null)
   const [deletingFolderBusy, setDeletingFolderBusy] = useState(false)
+
+  // Rename folder
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null)
+  const [renameFolderValue, setRenameFolderValue] = useState('')
+  const [renamingFolderBusy, setRenamingFolderBusy] = useState(false)
+
+  // Tabs
+  const [activeTab, setActiveTab] = useState<string>(ALL_FORMS_TAB)
+  const [creatingTab, setCreatingTab] = useState(false)
+  const [newTabName, setNewTabName] = useState('')
+  const [customTabs, setCustomTabs] = useState<string[]>([])
+  const [movingToTab, setMovingToTab] = useState<{ form: Form } | null>(null)
+  const [tabInput, setTabInput] = useState('')
+  const [savingTab, setSavingTab] = useState(false)
 
   const canEdit = currentRole && ['super_admin', 'program_admin', 'staff'].includes(currentRole)
 
@@ -232,6 +257,31 @@ export function FormsListClient() {
     setNewFolderName('')
   }
 
+  async function handleRenameFolder(oldName: string, newName: string) {
+    const formsInFolder = forms.filter(f => formSettings(f).folder === oldName)
+    setRenamingFolderBusy(true)
+    try {
+      for (const form of formsInFolder) {
+        const existing = formSettings(form)
+        const merged: FormSettings = { ...existing, folder: newName }
+        await fetch(`/api/forms/${form.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: merged }),
+        })
+      }
+      // If it was an empty folder, swap name in emptyFolders
+      setEmptyFolders(prev => prev.map(f => f === oldName ? newName : f))
+      toast.success(`Folder renamed to "${newName}"`)
+      await fetchForms()
+    } catch {
+      toast.error('Failed to rename folder')
+    }
+    setRenamingFolderBusy(false)
+    setRenamingFolder(null)
+    setRenameFolderValue('')
+  }
+
   async function handleDeleteFolder(folderName: string) {
     const formsInFolder = forms.filter(f => formSettings(f).folder === folderName)
     setDeletingFolderBusy(true)
@@ -256,11 +306,46 @@ export function FormsListClient() {
     setDeletingFolder(null)
   }
 
+  // Derive all tab names from forms + any user-created empty tabs
+  const formTabs = [...new Set(forms.map(f => formSettings(f).tab).filter(Boolean) as string[])]
+  const allTabs = [...new Set([...formTabs, ...customTabs])].sort()
+
   const filtered = forms.filter(f => {
     const matchesSearch = f.name.toLowerCase().includes(search.toLowerCase())
     const matchesStatus = statusFilter === 'all' || f.status === statusFilter
-    return matchesSearch && matchesStatus
+    const matchesTab = activeTab === ALL_FORMS_TAB || formSettings(f).tab === activeTab
+    return matchesSearch && matchesStatus && matchesTab
   })
+
+  async function handleMoveToTab() {
+    if (!movingToTab) return
+    const { form } = movingToTab
+    const target = tabInput.trim()
+    const existing = formSettings(form)
+    const merged: FormSettings = { ...existing, tab: target || undefined }
+    if (!target) delete merged.tab
+    setSavingTab(true)
+    const res = await fetch(`/api/forms/${form.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: merged }),
+    })
+    if (res.ok) {
+      toast.success(target ? `Moved to tab "${target}"` : 'Removed from tab')
+      fetchForms()
+      setMovingToTab(null)
+      setTabInput('')
+    } else toast.error('Failed to update tab')
+    setSavingTab(false)
+  }
+
+  function handleCreateTab() {
+    const name = newTabName.trim()
+    if (!name) return
+    if (!allTabs.includes(name)) setCustomTabs(prev => [...prev, name])
+    setCreatingTab(false)
+    setNewTabName('')
+  }
 
   function sortForms(items: Form[]): Form[] {
     if (sortMode === 'az') {
@@ -294,7 +379,7 @@ export function FormsListClient() {
   return (
     <div className="max-w-5xl px-8 py-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight text-gray-900">Forms</h1>
           <p className="mt-0.5 text-[14px] text-gray-500">
@@ -318,6 +403,51 @@ export function FormsListClient() {
             </Button>
           )}
         </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex items-center gap-0 mb-5 border-b border-gray-200 overflow-x-auto" role="tablist" aria-label="Form tabs">
+        <button
+          role="tab"
+          aria-selected={activeTab === ALL_FORMS_TAB}
+          onClick={() => setActiveTab(ALL_FORMS_TAB)}
+          className={cn(
+            'flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 transition-colors -mb-px',
+            activeTab === ALL_FORMS_TAB
+              ? 'border-orange-500 text-orange-600'
+              : 'border-transparent text-gray-500 hover:text-gray-800'
+          )}
+        >
+          <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" /> All Forms
+        </button>
+        {allTabs.map(tab => (
+          <button
+            key={tab}
+            role="tab"
+            aria-selected={activeTab === tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn(
+              'flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 transition-colors -mb-px',
+              activeTab === tab
+                ? 'border-orange-500 text-orange-600'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            )}
+          >
+            {tab}
+            <span className="text-[10px] text-gray-400 ml-0.5">
+              {forms.filter(f => formSettings(f).tab === tab).length}
+            </span>
+          </button>
+        ))}
+        {canEdit && (
+          <button
+            onClick={() => setCreatingTab(true)}
+            className="flex items-center gap-1 px-3 py-2 text-[12px] text-gray-400 hover:text-gray-600 whitespace-nowrap border-b-2 border-transparent -mb-px transition-colors"
+            aria-label="Create new tab"
+          >
+            <Plus className="h-3 w-3" aria-hidden="true" /> New tab
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -425,13 +555,22 @@ export function FormsListClient() {
                       )}
                     </button>
                     {canEdit && folder && (
-                      <button
-                        onClick={() => setDeletingFolder(folder)}
-                        className="p-1 rounded text-gray-300 hover:text-red-500 opacity-0 group-hover/folder:opacity-100 focus-visible:opacity-100 transition-opacity focus:outline-none focus-visible:ring-1 focus-visible:ring-red-400"
-                        aria-label={`Delete folder ${folder}`}
-                      >
-                        <Trash2 className="h-3 w-3" aria-hidden="true" />
-                      </button>
+                      <>
+                        <button
+                          onClick={() => { setRenamingFolder(folder); setRenameFolderValue(folder) }}
+                          className="p-1 rounded text-gray-300 hover:text-gray-600 opacity-0 group-hover/folder:opacity-100 focus-visible:opacity-100 transition-opacity focus:outline-none focus-visible:ring-1 focus-visible:ring-gray-400"
+                          aria-label={`Rename folder ${folder}`}
+                        >
+                          <Pencil className="h-3 w-3" aria-hidden="true" />
+                        </button>
+                        <button
+                          onClick={() => setDeletingFolder(folder)}
+                          className="p-1 rounded text-gray-300 hover:text-red-500 opacity-0 group-hover/folder:opacity-100 focus-visible:opacity-100 transition-opacity focus:outline-none focus-visible:ring-1 focus-visible:ring-red-400"
+                          aria-label={`Delete folder ${folder}`}
+                        >
+                          <Trash2 className="h-3 w-3" aria-hidden="true" />
+                        </button>
+                      </>
                     )}
                   </div>
                 )}
@@ -509,6 +648,9 @@ export function FormsListClient() {
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => openMoveDialog(form)}>
                                   <FolderInput className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Move to folder
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setMovingToTab({ form }); setTabInput(formSettings(form).tab ?? '') }}>
+                                  <Tag className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Move to tab
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 {form.status !== 'active' && (
@@ -698,6 +840,139 @@ export function FormsListClient() {
               aria-busy={deletingFolderBusy}
             >
               {deletingFolderBusy ? 'Deleting…' : 'Delete folder'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename folder dialog */}
+      <Dialog open={!!renamingFolder} onOpenChange={o => { if (!o) { setRenamingFolder(null); setRenameFolderValue('') } }}>
+        <DialogContent className="sm:max-w-sm" aria-describedby="rename-folder-desc">
+          <DialogHeader>
+            <DialogTitle>Rename folder</DialogTitle>
+            <p id="rename-folder-desc" className="text-[13px] text-muted-foreground mt-1">
+              All forms in &quot;{renamingFolder}&quot; will be moved to the new name.
+            </p>
+          </DialogHeader>
+          <div className="py-2">
+            <label htmlFor="rename-folder-input" className="text-[13px] font-medium text-gray-700 block mb-1.5">
+              New name
+            </label>
+            <Input
+              id="rename-folder-input"
+              value={renameFolderValue}
+              onChange={e => setRenameFolderValue(e.target.value)}
+              autoFocus
+              className="h-9 text-[13px]"
+              onKeyDown={e => {
+                if (e.key === 'Enter' && renameFolderValue.trim() && renameFolderValue.trim() !== renamingFolder) {
+                  e.preventDefault()
+                  handleRenameFolder(renamingFolder!, renameFolderValue.trim())
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setRenamingFolder(null); setRenameFolderValue('') }} disabled={renamingFolderBusy}>Cancel</Button>
+            <Button
+              onClick={() => renamingFolder && handleRenameFolder(renamingFolder, renameFolderValue.trim())}
+              className="bg-orange-600 hover:bg-orange-700"
+              disabled={renamingFolderBusy || !renameFolderValue.trim() || renameFolderValue.trim() === renamingFolder}
+              aria-busy={renamingFolderBusy}
+            >
+              {renamingFolderBusy ? 'Renaming…' : 'Rename'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create tab dialog */}
+      <Dialog open={creatingTab} onOpenChange={o => { setCreatingTab(o); if (!o) setNewTabName('') }}>
+        <DialogContent className="sm:max-w-sm" aria-describedby="create-tab-desc">
+          <DialogHeader>
+            <DialogTitle>New tab</DialogTitle>
+            <p id="create-tab-desc" className="text-[13px] text-muted-foreground mt-1">
+              Create a tab to group related forms (e.g. &quot;Q1&quot;, &quot;End of Year&quot;, &quot;Monthly Reports&quot;).
+            </p>
+          </DialogHeader>
+          <div className="py-2">
+            <label htmlFor="new-tab-name" className="text-[13px] font-medium text-gray-700 block mb-1.5">
+              Tab name
+            </label>
+            <Input
+              id="new-tab-name"
+              placeholder="e.g. Q1, Q2, End of Year…"
+              value={newTabName}
+              onChange={e => setNewTabName(e.target.value)}
+              autoFocus
+              className="h-9 text-[13px]"
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateTab() } }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setCreatingTab(false); setNewTabName('') }}>Cancel</Button>
+            <Button onClick={handleCreateTab} className="bg-orange-600 hover:bg-orange-700" disabled={!newTabName.trim()}>
+              Create tab
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Move to tab dialog */}
+      <Dialog open={!!movingToTab} onOpenChange={o => { if (!o) { setMovingToTab(null); setTabInput('') } }}>
+        <DialogContent className="sm:max-w-sm" aria-describedby="move-tab-desc">
+          <DialogHeader>
+            <DialogTitle>Move to tab</DialogTitle>
+            <p id="move-tab-desc" className="text-[13px] text-muted-foreground mt-1">
+              Choose an existing tab or type a new name.
+            </p>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            {allTabs.length > 0 && (
+              <div className="space-y-1">
+                {allTabs.map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setTabInput(t)}
+                    className={cn(
+                      'flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-left text-[13px] transition-colors',
+                      tabInput === t ? 'bg-orange-50 text-orange-700 font-medium' : 'hover:bg-gray-50 text-gray-700'
+                    )}
+                  >
+                    <Tag className={cn('h-3.5 w-3.5 flex-shrink-0', tabInput === t ? 'text-orange-500' : 'text-gray-400')} aria-hidden="true" />
+                    {t}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setTabInput('')}
+                  className={cn(
+                    'flex items-center gap-2.5 w-full rounded-lg px-3 py-2 text-left text-[13px] transition-colors',
+                    tabInput === '' ? 'bg-gray-100 text-gray-700 font-medium' : 'hover:bg-gray-50 text-gray-400'
+                  )}
+                >
+                  <X className="h-3.5 w-3.5 flex-shrink-0 text-gray-300" aria-hidden="true" />
+                  No tab (remove from tab)
+                </button>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <label htmlFor="tab-name" className="text-[12px] font-medium text-gray-500">
+                {allTabs.length > 0 ? 'Or create a new tab' : 'Tab name'}
+              </label>
+              <Input
+                id="tab-name"
+                placeholder="e.g. Q1, Q2, End of Year…"
+                value={tabInput}
+                onChange={e => setTabInput(e.target.value)}
+                className="h-9 text-[13px]"
+                autoFocus={allTabs.length === 0}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setMovingToTab(null); setTabInput('') }} disabled={savingTab}>Cancel</Button>
+            <Button onClick={handleMoveToTab} className="bg-orange-600 hover:bg-orange-700" disabled={savingTab} aria-busy={savingTab}>
+              {savingTab ? 'Saving…' : tabInput.trim() ? `Move to "${tabInput}"` : 'Remove from tab'}
             </Button>
           </DialogFooter>
         </DialogContent>

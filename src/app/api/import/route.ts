@@ -13,6 +13,8 @@ const initSchema = z.object({
   row_count: z.number().int().min(0),
   period_type: z.enum(['month', 'quarter']).optional(),
   period_value: z.string().optional(),
+  period_start: z.string().optional(),
+  period_end: z.string().optional(),
 })
 
 const anthropic = new Anthropic()
@@ -83,13 +85,16 @@ export async function POST(request: Request) {
   const parsed = initSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
 
-  const { program_id, file_name, file_url, preview_data, row_count, period_type, period_value } = parsed.data
+  const { program_id, file_name, file_url, preview_data, row_count, period_type, period_value, period_start, period_end } = parsed.data
 
-  const aiResult = await detectSchema(file_name, preview_data as Record<string, unknown>[])
+  // Only pass first 10 rows to AI for schema detection
+  const aiResult = await detectSchema(file_name, (preview_data as Record<string, unknown>[]).slice(0, 10))
 
   const columnMappings: Record<string, string> = { ...aiResult.column_mappings }
   if (period_type) columnMappings._period_type = period_type
   if (period_value) columnMappings._period_value = period_value
+  if (period_start) columnMappings._period_start = period_start
+  if (period_end) columnMappings._period_end = period_end
 
   const { data, error } = await service.from('import_jobs').insert({
     program_id,

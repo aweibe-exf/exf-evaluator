@@ -117,6 +117,8 @@ export interface FormSettings {
   periodEnd?: string            // ISO date: actual end of the reporting period
   // Folder grouping on the forms list
   folder?: string
+  // Tab grouping on the forms list (e.g. "Q1", "Q2", "End of Year")
+  tab?: string
   // Auto-reminder configuration
   reminderIntervalDays?: number   // days between auto-reminders
   reminderMaxCount?: number       // max auto-reminders to send per token

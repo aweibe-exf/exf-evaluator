@@ -75,9 +75,22 @@ export async function GET(request: Request) {
 
   if (formId) query = query.eq('form_id', formId)
   if (programId) query = query.eq('forms.program_id', programId)
-  if (status) query = query.eq('status', status as 'draft' | 'submitted' | 'reviewed')
+  // 'flagged' is stored in metadata.flagged, not the status enum
+  if (status === 'flagged') {
+    query = query.filter('metadata->>flagged', 'eq', 'true')
+  } else if (status) {
+    // Also exclude flagged items from other status views
+    query = query.eq('status', status as 'draft' | 'submitted' | 'reviewed')
+      .or('metadata->>flagged.is.null,metadata->>flagged.eq.false')
+  }
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+
+  // Attach effectiveStatus to each row so clients don't need to re-derive it
+  const rows = (data ?? []).map(s => {
+    const meta = ((s.metadata ?? {}) as Record<string, unknown>)
+    return { ...s, effectiveStatus: meta.flagged ? 'flagged' : s.status }
+  })
+  return NextResponse.json(rows)
 }

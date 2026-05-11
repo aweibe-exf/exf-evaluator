@@ -14,6 +14,7 @@ type Status = 'draft' | 'submitted' | 'reviewed' | 'flagged'
 interface Submission {
   id: string
   status: Status
+  effectiveStatus?: Status   // derived: 'flagged' if metadata.flagged, else status
   respondent_email: string | null
   submitted_at: string | null
   created_at: string
@@ -47,7 +48,9 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
 
   const allFields: FormField[] = schema?.pages.flatMap(p => p.fields) ?? []
   const data = (submission.data ?? {}) as Record<string, unknown>
-  const cfg = statusConfig[submission.status] ?? statusConfig.draft
+  // Use effectiveStatus (which accounts for metadata.flagged) for display
+  const displayStatus = submission.effectiveStatus ?? submission.status
+  const cfg = statusConfig[displayStatus] ?? statusConfig.draft
 
   async function setStatus(status: Status) {
     setUpdating(true)
@@ -59,7 +62,8 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
     setUpdating(false)
     if (res.ok) {
       const updated = await res.json()
-      setSubmission(s => ({ ...s, status: updated.status }))
+      // effectiveStatus comes back from the API already derived
+      setSubmission(s => ({ ...s, status: updated.status, effectiveStatus: updated.effectiveStatus ?? updated.status }))
       toast.success(`Marked as ${status}`)
     } else {
       toast.error('Failed to update status')
@@ -91,13 +95,14 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
               : `Started ${formatDistanceToNow(new Date(submission.created_at), { addSuffix: true })}`}
           </p>
         </div>
-        <span className={cn('rounded-full border px-2.5 py-1 text-[12px] font-medium flex-shrink-0', cfg.className)}>
+        <span className={cn('rounded-full border px-2.5 py-1 text-[12px] font-medium flex-shrink-0', cfg.className)}
+          aria-label={`Status: ${cfg.label}`}>
           {cfg.label}
         </span>
       </div>
 
       {/* Actions */}
-      {submission.status !== 'reviewed' && submission.status !== 'flagged' && (
+      {displayStatus !== 'reviewed' && displayStatus !== 'flagged' && (
         <div className="flex items-center gap-2 mb-6">
           <Button
             variant="outline"
@@ -121,7 +126,7 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
           </Button>
         </div>
       )}
-      {(submission.status === 'reviewed' || submission.status === 'flagged') && (
+      {(displayStatus === 'reviewed' || displayStatus === 'flagged') && (
         <div className="mb-6">
           <Button
             variant="ghost"

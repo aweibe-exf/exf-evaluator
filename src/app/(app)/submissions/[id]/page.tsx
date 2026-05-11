@@ -18,10 +18,12 @@ export default async function SubmissionDetailPage({ params }: { params: Promise
   if (!raw) notFound()
 
   const schema = raw.forms?.schema as unknown as FormSchema | null
+  const meta = ((raw.metadata ?? {}) as Record<string, unknown>)
+  const effectiveStatus = meta.flagged ? 'flagged' : raw.status
 
   return (
     <SubmissionDetailClient
-      submission={raw as unknown as Parameters<typeof SubmissionDetailClient>[0]['submission']}
+      submission={{ ...(raw as unknown as Parameters<typeof SubmissionDetailClient>[0]['submission']), effectiveStatus: effectiveStatus as 'draft' | 'submitted' | 'reviewed' | 'flagged' }}
       schema={schema}
     />
   )

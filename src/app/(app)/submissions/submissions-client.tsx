@@ -14,6 +14,7 @@ import type { Database } from '@/types/database'
 
 type Submission = Database['public']['Tables']['submissions']['Row'] & {
   forms: { name: string; program_id: string } | null
+  effectiveStatus?: string
 }
 
 type StatusFilter = 'all' | 'submitted' | 'reviewed' | 'flagged' | 'draft'
@@ -127,7 +128,7 @@ export function SubmissionsClient() {
       ) : (
         <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden" role="list" aria-label="Submissions">
           {filtered.map((sub, i) => {
-            const cfg = statusConfig[sub.status] ?? statusConfig.draft
+            const cfg = statusConfig[sub.effectiveStatus ?? sub.status] ?? statusConfig.draft
             const submittedAt = sub.submitted_at
               ? formatDistanceToNow(new Date(sub.submitted_at), { addSuffix: true })
               : formatDistanceToNow(new Date(sub.created_at), { addSuffix: true })

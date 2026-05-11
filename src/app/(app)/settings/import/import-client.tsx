@@ -5,7 +5,7 @@ import { useProgram } from '@/contexts/program-context'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import {
-  Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2, RotateCcw,
+  Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2, RotateCcw, Trash2, Undo2,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -21,17 +21,23 @@ const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; cl
   failed:     { label: 'Failed',     icon: AlertCircle,    className: 'text-red-500' },
 }
 
-function parseCsv(text: string): Record<string, string>[] {
+function parseCsvRows(text: string, maxRows?: number): Record<string, string>[] {
   const lines = text.trim().split('\n')
   if (lines.length < 2) return []
   const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim())
-  return lines.slice(1, 11).map(line => {
+  const dataLines = maxRows !== undefined ? lines.slice(1, maxRows + 1) : lines.slice(1)
+  return dataLines.map(line => {
     const vals = line.split(',').map(v => v.replace(/^"|"$/g, '').trim())
     const row: Record<string, string> = {}
     headers.forEach((h, i) => { row[h] = vals[i] ?? '' })
     return row
   })
 }
+
+/** Returns only first 10 rows — used for AI schema detection preview */
+function parseCsvPreview(text: string): Record<string, string>[] { return parseCsvRows(text, 10) }
+/** Returns ALL rows — used for actual submission creation */
+function parseCsvAll(text: string): Record<string, string>[] { return parseCsvRows(text) }
 
 interface MappingEditorProps {
   job: ImportJob
@@ -44,18 +50,27 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
   const rawMappings = (job.column_mappings ?? {}) as Record<string, string>
   const initialPeriodType = (rawMappings._period_type ?? '') as 'month' | 'quarter' | ''
   const initialPeriodValue = rawMappings._period_value ?? ''
+  const initialPeriodStart = rawMappings._period_start ?? ''
+  const initialPeriodEnd = rawMappings._period_end ?? ''
   const initialMappings = Object.fromEntries(Object.entries(rawMappings).filter(([k]) => !k.startsWith('_period_')))
 
   const [mappings, setMappings] = useState<Record<string, string>>(initialMappings)
   const [periodType, setPeriodType] = useState<'month' | 'quarter' | ''>(initialPeriodType)
   const [periodValue, setPeriodValue] = useState(initialPeriodValue)
+  const [periodStart, setPeriodStart] = useState(initialPeriodStart)
+  const [periodEnd, setPeriodEnd] = useState(initialPeriodEnd)
   const preview = (job.preview_data ?? []) as Record<string, string>[]
 
   const FIELD_TYPES = ['text', 'number', 'date', 'email', 'single_choice', 'multiple_choice', 'scale', 'boolean', 'name', 'identifier', 'skip']
 
   function handleSave() {
     const full: Record<string, string> = { ...mappings }
-    if (periodType) { full._period_type = periodType; full._period_value = periodValue }
+    if (periodType) {
+      full._period_type = periodType
+      full._period_value = periodValue
+      if (periodStart) full._period_start = periodStart
+      if (periodEnd) full._period_end = periodEnd
+    }
     onSave(full)
   }
 
@@ -82,7 +97,7 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
         <span className="text-[12px] font-medium text-gray-600">Reporting period:</span>
         <select
           value={periodType}
-          onChange={e => { setPeriodType(e.target.value as 'month' | 'quarter' | ''); setPeriodValue('') }}
+          onChange={e => { setPeriodType(e.target.value as 'month' | 'quarter' | ''); setPeriodValue(''); setPeriodStart(''); setPeriodEnd('') }}
           className="h-7 rounded-md border border-gray-200 px-2 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
           aria-label="Period type"
         >
@@ -93,7 +108,16 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
         {periodType === 'month' && (
           <select
             value={periodValue}
-            onChange={e => setPeriodValue(e.target.value)}
+            onChange={e => {
+              const v = e.target.value
+              setPeriodValue(v)
+              if (v) {
+                const [y, m] = v.split('-').map(Number)
+                const lastDay = new Date(y, m, 0).getDate()
+                setPeriodStart(`${v}-01`)
+                setPeriodEnd(`${v}-${String(lastDay).padStart(2, '0')}`)
+              }
+            }}
             className="h-7 rounded-md border border-gray-200 px-2 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
             aria-label="Month"
           >
@@ -110,6 +134,17 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
             className="h-7 rounded-md border border-gray-200 px-2 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400 w-36"
             aria-label="Quarter label"
           />
+        )}
+        {periodType && (
+          <>
+            <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)}
+              className="h-7 rounded-md border border-gray-200 px-2 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
+              aria-label="Period start date" />
+            <span className="text-[11px] text-gray-400">→</span>
+            <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)}
+              className="h-7 rounded-md border border-gray-200 px-2 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
+              aria-label="Period end date" />
+          </>
         )}
         {periodValue && <span className="text-[11px] text-orange-600 font-medium">A form will be created for <strong>{periodValue}</strong></span>}
       </div>
@@ -180,8 +215,12 @@ export function ImportClient() {
   const [activeJob, setActiveJob] = useState<ImportJob | null>(null)
   const [savingMappings, setSavingMappings] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState<ImportJob | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [periodType, setPeriodType] = useState<'month' | 'quarter' | ''>('')
   const [periodValue, setPeriodValue] = useState('')
+  const [periodStart, setPeriodStart] = useState('')
+  const [periodEnd, setPeriodEnd] = useState('')
 
   const loadJobs = useCallback(async () => {
     if (!currentProgram) return
@@ -192,6 +231,21 @@ export function ImportClient() {
 
   // Lazy load on first render
   if (currentProgram && !loaded) loadJobs()
+
+  async function handleDelete(job: ImportJob) {
+    setDeleting(true)
+    const res = await fetch(`/api/import/${job.id}`, { method: 'DELETE' })
+    setDeleting(false)
+    if (res.ok) {
+      setJobs(j => j.filter(x => x.id !== job.id))
+      if (activeJob?.id === job.id) setActiveJob(null)
+      setConfirmingDelete(null)
+      const wasComplete = job.status === 'complete'
+      toast.success(wasComplete ? 'Import undone — form and submissions removed' : 'Import deleted')
+    } else {
+      toast.error('Failed to delete import')
+    }
+  }
 
   async function handleFile(file: File) {
     if (!currentProgram) return
@@ -204,12 +258,13 @@ export function ImportClient() {
     setUploading(true)
     try {
       const text = await file.text()
-      const preview = parseCsv(text)
+      const preview = parseCsvPreview(text)
       if (preview.length === 0) {
         toast.error('Could not parse file — check that it has headers and data rows')
         return
       }
-      const rowCount = text.trim().split('\n').length - 1
+      const allRows = parseCsvAll(text)
+      const rowCount = allRows.length
 
       const res = await fetch('/api/import', {
         method: 'POST',
@@ -218,10 +273,12 @@ export function ImportClient() {
           program_id: currentProgram.id,
           file_name: file.name,
           file_url: '',
-          preview_data: preview,
+          preview_data: allRows,
           row_count: rowCount,
           period_type: periodType || undefined,
           period_value: periodValue || undefined,
+          period_start: periodStart || undefined,
+          period_end: periodEnd || undefined,
         }),
       })
 
@@ -281,15 +338,15 @@ export function ImportClient() {
       </div>
 
       {/* Period picker */}
-      <div className="mb-4 rounded-xl border border-gray-100 bg-white shadow-sm px-5 py-4 flex items-center gap-4 flex-wrap">
-        <div>
+      <div className="mb-4 rounded-xl border border-gray-100 bg-white shadow-sm px-5 py-4 flex items-start gap-4 flex-wrap">
+        <div className="flex-shrink-0">
           <p className="text-[13px] font-semibold text-gray-800">Reporting period</p>
           <p className="text-[11px] text-gray-400 mt-0.5">Assign this data to a specific month or quarter</p>
         </div>
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-2 ml-auto flex-wrap">
           <select
             value={periodType}
-            onChange={e => { setPeriodType(e.target.value as 'month' | 'quarter' | ''); setPeriodValue('') }}
+            onChange={e => { setPeriodType(e.target.value as 'month' | 'quarter' | ''); setPeriodValue(''); setPeriodStart(''); setPeriodEnd('') }}
             className="h-8 rounded-md border border-gray-200 px-2.5 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
             aria-label="Period type"
           >
@@ -300,7 +357,16 @@ export function ImportClient() {
           {periodType === 'month' && (
             <select
               value={periodValue}
-              onChange={e => setPeriodValue(e.target.value)}
+              onChange={e => {
+                const v = e.target.value
+                setPeriodValue(v)
+                if (v) {
+                  const [y, m] = v.split('-').map(Number)
+                  const lastDay = new Date(y, m, 0).getDate()
+                  setPeriodStart(`${v}-01`)
+                  setPeriodEnd(`${v}-${String(lastDay).padStart(2, '0')}`)
+                }
+              }}
               className="h-8 rounded-md border border-gray-200 px-2.5 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
               aria-label="Month"
             >
@@ -318,10 +384,21 @@ export function ImportClient() {
               aria-label="Quarter label"
             />
           )}
+          {periodType && (
+            <>
+              <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)}
+                className="h-8 rounded-md border border-gray-200 px-2.5 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
+                aria-label="Period start date" />
+              <span className="text-[11px] text-gray-400">→</span>
+              <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)}
+                className="h-8 rounded-md border border-gray-200 px-2.5 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
+                aria-label="Period end date" />
+            </>
+          )}
         </div>
         {periodValue && (
           <p className="w-full text-[11px] text-orange-600 font-medium pt-0 -mt-1">
-            A form will be created for <strong>{periodValue}</strong> when you confirm mappings.
+            A form will be created for <strong>{periodValue}</strong>{periodStart && periodEnd ? ` (${periodStart} → ${periodEnd})` : ''} when you confirm mappings.
           </p>
         )}
       </div>
@@ -420,12 +497,82 @@ export function ImportClient() {
                       <RotateCcw className="h-3 w-3" aria-hidden="true" /> Retry
                     </Button>
                   )}
+                  {job.status === 'complete' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-[11px] gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                      onClick={() => setConfirmingDelete(job)}
+                      aria-label="Undo import"
+                    >
+                      <Undo2 className="h-3 w-3" aria-hidden="true" /> Undo
+                    </Button>
+                  )}
+                  {(job.status === 'review' || job.status === 'failed' || job.status === 'pending') && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-gray-300 hover:text-red-500 hover:bg-red-50"
+                      onClick={() => setConfirmingDelete(job)}
+                      aria-label="Delete import"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    </Button>
+                  )}
                 </div>
               )
             })}
           </div>
         </div>
       )}
+
+      {/* Delete / Undo confirm dialog */}
+      {confirmingDelete && (() => {
+        const isComplete = confirmingDelete.status === 'complete'
+        const m = (confirmingDelete.column_mappings ?? {}) as Record<string, string>
+        const periodLabel = m._period_value ? ` (${m._period_value})` : ''
+        const fileName = confirmingDelete.file_name.replace(/\.[^.]+$/, '') + periodLabel
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" role="dialog" aria-modal="true" aria-labelledby="confirm-delete-title">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+              <h2 id="confirm-delete-title" className="text-[16px] font-semibold text-gray-900 mb-2">
+                {isComplete ? 'Undo import?' : 'Delete import?'}
+              </h2>
+              <p className="text-[13px] text-gray-500 mb-1">
+                <strong className="text-gray-700">{fileName}</strong>
+                {' '}· {confirmingDelete.row_count?.toLocaleString() ?? '—'} rows
+              </p>
+              {isComplete ? (
+                <p className="text-[13px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-3">
+                  This will permanently delete the imported form and all {confirmingDelete.row_count?.toLocaleString()} submission records created from this import. This cannot be undone.
+                </p>
+              ) : (
+                <p className="text-[13px] text-gray-500 mt-2">
+                  This will remove the import job. No form or submissions were created, so nothing else will be affected.
+                </p>
+              )}
+              <div className="flex justify-end gap-2 mt-5">
+                <Button variant="ghost" onClick={() => setConfirmingDelete(null)} disabled={deleting} className="h-8 text-[13px]">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => handleDelete(confirmingDelete)}
+                  disabled={deleting}
+                  aria-busy={deleting}
+                  className={cn('h-8 text-[13px] gap-1.5', isComplete ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700')}
+                >
+                  {deleting
+                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> {isComplete ? 'Undoing…' : 'Deleting…'}</>
+                    : isComplete
+                      ? <><Undo2 className="h-3.5 w-3.5" aria-hidden="true" /> Yes, undo import</>
+                      : <><Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete</>
+                  }
+                </Button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

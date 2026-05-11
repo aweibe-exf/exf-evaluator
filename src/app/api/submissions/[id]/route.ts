@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import type { Json } from '@/types/database'
 
 const updateSchema = z.object({
+  // 'flagged' is a UI-only concept stored in metadata.flagged; DB enum is draft|submitted|reviewed
   status: z.enum(['draft', 'submitted', 'reviewed', 'flagged']).optional(),
   data: z.record(z.string(), z.unknown()).optional(),
 })
@@ -34,9 +36,22 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const parsed = updateSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
 
+  const { status, data: newData } = parsed.data
+
+  // 'flagged' is stored in metadata.flagged (not the DB enum) — fetch current row first
+  const { data: existing } = await service.from('submissions').select('metadata').eq('id', id).single()
+  const existingMeta = ((existing?.metadata ?? {}) as Record<string, unknown>)
+
   const update: Record<string, unknown> = {}
-  if (parsed.data.status) update.status = parsed.data.status
-  if (parsed.data.data) update.data = parsed.data.data
+  if (status === 'flagged') {
+    // Don't touch the DB status column — just set metadata.flagged = true
+    update.metadata = { ...existingMeta, flagged: true } as Json
+  } else if (status) {
+    update.status = status
+    // Clear flagged when explicitly setting reviewed or submitted
+    update.metadata = { ...existingMeta, flagged: false } as Json
+  }
+  if (newData) update.data = newData
 
   const { data, error } = await service
     .from('submissions')
@@ -46,5 +61,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+
+  // Compute and attach effectiveStatus for the client
+  const meta = ((data.metadata ?? {}) as Record<string, unknown>)
+  const effectiveStatus = meta.flagged ? 'flagged' : data.status
+  return NextResponse.json({ ...data, effectiveStatus })
 }
