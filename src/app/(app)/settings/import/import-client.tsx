@@ -21,17 +21,77 @@ const STATUS_CONFIG: Record<string, { label: string; icon: React.ElementType; cl
   failed:     { label: 'Failed',     icon: AlertCircle,    className: 'text-red-500' },
 }
 
+/**
+ * RFC 4180-compliant CSV parser.
+ * Handles: quoted fields with embedded commas, embedded newlines (\n / \r\n),
+ * and escaped quotes ("" → "). The naive split('\n') + split(',') approach
+ * breaks on all three of these — common in real survey exports.
+ */
 function parseCsvRows(text: string, maxRows?: number): Record<string, string>[] {
-  const lines = text.trim().split('\n')
-  if (lines.length < 2) return []
-  const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim())
-  const dataLines = maxRows !== undefined ? lines.slice(1, maxRows + 1) : lines.slice(1)
-  return dataLines.map(line => {
-    const vals = line.split(',').map(v => v.replace(/^"|"$/g, '').trim())
-    const row: Record<string, string> = {}
-    headers.forEach((h, i) => { row[h] = vals[i] ?? '' })
-    return row
-  })
+  // Normalise line endings
+  const src = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+  const rows: string[][] = []
+  let field = ''
+  let inQuotes = false
+  let fieldStart = true   // true right after a delimiter or row boundary
+  let currentRow: string[] = []
+
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i]
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') {
+          // Escaped quote: "" → "
+          field += '"'
+          i++
+        } else {
+          // Closing quote
+          inQuotes = false
+        }
+      } else {
+        // Preserve everything inside quotes, including newlines
+        field += ch
+      }
+    } else {
+      if (ch === '"' && fieldStart) {
+        // Opening quote — only recognised at the very start of a field
+        inQuotes = true
+        fieldStart = false
+      } else if (ch === ',') {
+        currentRow.push(field.trim())
+        field = ''
+        fieldStart = true
+      } else if (ch === '\n') {
+        currentRow.push(field.trim())
+        if (currentRow.some(c => c !== '')) rows.push(currentRow)
+        currentRow = []
+        field = ''
+        fieldStart = true
+      } else {
+        field += ch
+        fieldStart = false
+      }
+    }
+  }
+
+  // Flush the last field / row
+  currentRow.push(field.trim())
+  if (currentRow.some(c => c !== '')) rows.push(currentRow)
+
+  if (rows.length < 2) return []
+
+  const headers = rows[0].map(h => h.trim())
+  const dataRows = maxRows !== undefined ? rows.slice(1, maxRows + 1) : rows.slice(1)
+
+  return dataRows
+    .filter(row => row.some(c => c.trim() !== ''))  // skip blank rows
+    .map(row => {
+      const record: Record<string, string> = {}
+      headers.forEach((h, i) => { record[h] = row[i] ?? '' })
+      return record
+    })
 }
 
 /** Returns only first 10 rows — used for AI schema detection preview */
