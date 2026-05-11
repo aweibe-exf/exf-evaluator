@@ -63,6 +63,9 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
 
   const FIELD_TYPES = ['text', 'number', 'date', 'email', 'single_choice', 'multiple_choice', 'scale', 'boolean', 'name', 'identifier', 'skip']
 
+  // Period is complete when both start and end dates are present
+  const periodComplete = !!(periodStart && periodEnd)
+
   function handleSave() {
     const full: Record<string, string> = { ...mappings }
     if (periodType) {
@@ -76,25 +79,38 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
 
   return (
     <div className="mt-4 rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-      <div className="px-5 py-3.5 border-b flex items-center justify-between">
+      <div className="px-5 py-3.5 border-b flex items-center justify-between gap-4">
         <div>
           <p className="text-[13px] font-semibold text-gray-800">{job.file_name}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">{job.row_count?.toLocaleString()} rows · AI detected {Object.keys(schema).length} columns</p>
         </div>
-        <Button
-          onClick={handleSave}
-          disabled={saving}
-          className="h-8 text-[12px] bg-orange-600 hover:bg-orange-700 gap-1.5"
-          aria-busy={saving}
-        >
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />}
-          {saving ? 'Saving…' : 'Confirm & create form'}
-        </Button>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {!periodComplete && (
+            <p className="text-[12px] text-amber-600 font-medium">
+              Set a reporting period before confirming
+            </p>
+          )}
+          <Button
+            onClick={handleSave}
+            disabled={saving || !periodComplete}
+            className="h-8 text-[12px] bg-orange-600 hover:bg-orange-700 gap-1.5 disabled:opacity-50"
+            aria-busy={saving}
+            title={!periodComplete ? 'A reporting period is required before you can confirm this import' : undefined}
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />}
+            {saving ? 'Saving…' : 'Confirm & create form'}
+          </Button>
+        </div>
       </div>
 
-      {/* Period assignment in editor */}
-      <div className="px-5 py-3 border-b bg-gray-50 flex items-center gap-3 flex-wrap">
-        <span className="text-[12px] font-medium text-gray-600">Reporting period:</span>
+      {/* Period assignment in editor — highlighted amber when not yet set */}
+      <div className={cn(
+        'px-5 py-3 border-b flex items-center gap-3 flex-wrap',
+        periodComplete ? 'bg-gray-50' : 'bg-amber-50 border-amber-100'
+      )}>
+        <span className={cn('text-[12px] font-medium', periodComplete ? 'text-gray-600' : 'text-amber-700')}>
+          Reporting period <span className="text-amber-500" aria-label="required">*</span>
+        </span>
         <select
           value={periodType}
           onChange={e => { setPeriodType(e.target.value as 'month' | 'quarter' | ''); setPeriodValue(''); setPeriodStart(''); setPeriodEnd('') }}
@@ -146,7 +162,20 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
               aria-label="Period end date" />
           </>
         )}
-        {periodValue && <span className="text-[11px] text-orange-600 font-medium">A form will be created for <strong>{periodValue}</strong></span>}
+        {!periodComplete && !periodType && (
+          <span className="text-[11px] text-amber-600 italic">Choose a period type to continue</span>
+        )}
+        {periodType && !periodComplete && (
+          <span className="text-[11px] text-amber-600 italic">
+            {periodType === 'month' ? 'Select a month above' : 'Enter a label and start/end dates above'}
+          </span>
+        )}
+        {periodComplete && periodValue && (
+          <span className="text-[11px] text-orange-600 font-medium">Form will be created for <strong>{periodValue}</strong></span>
+        )}
+        {periodComplete && !periodValue && (
+          <span className="text-[11px] text-emerald-600 font-medium">✓ {periodStart} → {periodEnd}</span>
+        )}
       </div>
 
       <div className="overflow-x-auto">
