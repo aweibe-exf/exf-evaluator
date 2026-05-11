@@ -11,12 +11,11 @@ export default async function ReportEditorPage({ params }: { params: Promise<{ i
   const { data: report } = await supabase.from('reports').select('*').eq('id', id).single()
   if (!report) notFound()
 
-  // Fetch available forms with settings (for period info)
+  // Fetch all forms (any status) — reports pull from historical data, not just active forms
   const { data: forms } = await supabase
     .from('forms')
     .select('id, name, settings')
     .eq('program_id', report.program_id)
-    .eq('status', 'active')
     .order('name')
 
   const formRows = (forms ?? []).map(f => ({

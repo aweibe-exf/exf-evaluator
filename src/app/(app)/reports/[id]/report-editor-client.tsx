@@ -51,29 +51,37 @@ function formSettings(f: FormRow): FormSettings {
 }
 
 function formatPeriodLabel(s: FormSettings): string {
-  if (!s.periodValue) return ''
-  if (s.periodType === 'month') {
+  // Month: format YYYY-MM as "Nov 2025"
+  if (s.periodType === 'month' && s.periodValue) {
     const [y, m] = s.periodValue.split('-')
     const d = new Date(Number(y), Number(m) - 1, 1)
     return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   }
-  if (s.periodStart && s.periodEnd) {
+  // Quarter with label: "Fall 2025 · Oct 1 – Dec 31"
+  if (s.periodValue && s.periodStart && s.periodEnd) {
     return `${s.periodValue} · ${s.periodStart} – ${s.periodEnd}`
   }
-  return s.periodValue
+  // Label only
+  if (s.periodValue) return s.periodValue
+  // Date range only (label was left blank)
+  if (s.periodStart && s.periodEnd) return `${s.periodStart} – ${s.periodEnd}`
+  return ''
 }
 
 function derivePeriods(forms: FormRow[]): Period[] {
   const map = new Map<string, Period>()
   forms.forEach(f => {
     const s = formSettings(f)
-    if (!s.periodValue || !s.periodStart || !s.periodEnd) return
-    const existing = map.get(s.periodValue)
+    // Need at minimum a start and end date to define a period
+    if (!s.periodStart || !s.periodEnd) return
+    // Use periodValue as the grouping key; fall back to date range string
+    const key = s.periodValue || `${s.periodStart}|${s.periodEnd}`
+    const existing = map.get(key)
     if (existing) {
       existing.formIds.push(f.id)
     } else {
-      map.set(s.periodValue, {
-        value: s.periodValue,
+      map.set(key, {
+        value: key,
         label: formatPeriodLabel(s),
         start: s.periodStart,
         end: s.periodEnd,
