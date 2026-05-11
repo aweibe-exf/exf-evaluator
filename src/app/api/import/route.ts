@@ -19,6 +19,62 @@ const initSchema = z.object({
 
 const anthropic = new Anthropic()
 
+/**
+ * Local heuristic pre-classifier.
+ * Runs before the AI call and assigns a best-guess type based on column name
+ * patterns and sample values. The AI prompt then shows these hints so Claude
+ * can confirm or override rather than starting cold.
+ */
+function heuristicType(header: string, sampleValues: unknown[]): string {
+  const h = header.toLowerCase().trim()
+  const nonEmpty = sampleValues.filter(v => v !== null && v !== undefined && v !== '')
+
+  // --- Email ---
+  if (/email/i.test(h)) return 'email'
+  if (nonEmpty.some(v => typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))) return 'email'
+
+  // --- Name ---
+  if (/^(name|full.?name|respondent.?name|participant.?name|contact.?name)$/i.test(h)) return 'name'
+
+  // --- Date ---
+  if (/date|timestamp|recorded.?on|submitted.?on/i.test(h)) return 'date'
+  if (nonEmpty.some(v => typeof v === 'string' && /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(v.trim()))) return 'date'
+
+  // --- Identifier ---
+  if (/\b(id|identifier|record.?#|record.?no|ref(erence)?)\b/i.test(h)) return 'identifier'
+
+  // --- Boolean (Yes/No) ---
+  if (nonEmpty.length > 0 && nonEmpty.every(v =>
+    typeof v === 'string' && /^(yes|no|y|n|true|false)$/i.test(v.trim())
+  )) return 'boolean'
+
+  // --- Number: header-name signals ---
+  // "#", "# of", "#of", "number of", "no. of", "count of", "total", "how many"
+  if (/^#/.test(h)) return 'number'                                      // starts with #
+  if (/\b(#\s*of|number\s*of|no\.\s*of|count\s*of|how\s+many)\b/i.test(h)) return 'number'
+  if (/\b(total|sum|quantity|qty|amount|volume|revenue|sales|cost|budget|funding|grant|award)\b/i.test(h)) return 'number'
+  if (/\b(rate|percentage|percent|ratio|proportion)\b/i.test(h)) return 'number'
+  if (/\b(attendance|enrollment|participants|attendees|served|reached|trained|completed)\b/i.test(h)) return 'number'
+  if (/\b(hours|days|weeks|months|years|acres|miles|units|lbs|tons)\b/i.test(h)) return 'number'
+  if (/\%$/.test(h.trim())) return 'number'
+
+  // --- Scale: satisfaction / rating columns ---
+  if (/\b(satisf|rating|score|rank|rate|nps|likert|scale)\b/i.test(h)) return 'scale'
+
+  // --- Number: sample values look numeric (incl. shorthand) ---
+  const numericPattern = /^[$]?[\d,]+(\.\d+)?[KkMmBb]?[%]?$|^\d+(\.\d+)?[KkMmBb]$/
+  if (nonEmpty.length > 0 && nonEmpty.every(v => typeof v === 'string' && numericPattern.test(v.trim()))) return 'number'
+
+  // --- Single/multiple choice: low cardinality non-numeric repeated values ---
+  const uniqueStrings = new Set(nonEmpty.map(v => String(v).trim().toLowerCase()))
+  if (uniqueStrings.size <= 6 && nonEmpty.length >= 3) {
+    const allShort = [...uniqueStrings].every(s => s.length < 40)
+    if (allShort) return 'single_choice'
+  }
+
+  return 'text'
+}
+
 async function detectSchema(
   fileName: string,
   preview: Record<string, unknown>[]
@@ -26,35 +82,46 @@ async function detectSchema(
   const headers = Object.keys(preview[0] ?? {})
   const sample = preview.slice(0, 5)
 
-  const prompt = `You are a data analyst helping to map CSV/Excel columns to a survey evaluation system.
+  // Build per-column hints from the local heuristic
+  const hints = headers.map(h => {
+    const values = preview.map(row => row[h])
+    const guess = heuristicType(h, values)
+    return `  "${h}": ${guess}  ← heuristic guess`
+  }).join('\n')
+
+  const prompt = `You are a data analyst mapping CSV columns to a survey evaluation system field types.
 
 File: ${fileName}
-Columns: ${headers.join(', ')}
+
+Columns and heuristic guesses (confirm or correct each):
+${hints}
 
 Sample rows (first 5):
 ${JSON.stringify(sample, null, 2)}
 
-The evaluation system stores submissions with these field types:
-- text: open-ended text answer
-- number: numeric value — use this for any column with numeric data even if values use shorthand like "300K", "$1,500", "1.2M", or "75%"
-- date: date value (YYYY-MM-DD)
+Field types available:
+- text: open-ended prose answer
+- number: any count, quantity, total, rate, percentage, monetary value, or measurement
+  → USE THIS when the column header starts with "#", contains "# of", "number of",
+    "count of", "total", "how many", "participants", "served", "hours", "rate",
+    "percentage", "%", "amount", "revenue", "acres", "units", or similar
+  → USE THIS when sample values contain numeric shorthand like "300K", "$1.5M", "75%"
+- date: date or timestamp
 - email: email address
-- single_choice: one selected option
-- multiple_choice: multiple selected options
-- scale: numeric rating (1-10)
-- boolean: yes/no value
-- name: respondent name
-- identifier: unique ID / record number
+- name: person's name
+- identifier: unique ID or record number
+- single_choice: one option from a fixed set (low-cardinality text column)
+- multiple_choice: multiple options selected
+- scale: numeric satisfaction/rating score (1–5, 1–10, NPS, etc.)
+- boolean: yes/no or true/false
 
-Return a JSON object with two keys:
-1. "detected_schema": maps each column name to its detected field type
-2. "column_mappings": maps each column name to a clean, normalized label (snake_case, descriptive)
-
-Example:
-{
-  "detected_schema": { "Q1: How satisfied?": "scale", "Email Address": "email" },
-  "column_mappings": { "Q1: How satisfied?": "satisfaction_score", "Email Address": "respondent_email" }
-}
+Instructions:
+1. Start from the heuristic guesses above — only change them when you have a clear reason.
+2. Pay close attention to column names: "# of sites", "Total Participants", "Acres Restored",
+   "% Complete", "Revenue Generated", "How many attended" → all should be "number".
+3. Return a JSON object with exactly these two keys:
+   - "detected_schema": maps each column name to its final field type
+   - "column_mappings": maps each column name to a clean snake_case label
 
 Return only valid JSON, no explanation.`
 
@@ -69,8 +136,12 @@ Return only valid JSON, no explanation.`
     const cleaned = text.replace(/```json\n?|\n?```/g, '').trim()
     return JSON.parse(cleaned)
   } catch {
+    // Fall back to pure heuristic if JSON parse fails
     const fallback: Record<string, string> = {}
-    headers.forEach(h => { fallback[h] = 'text' })
+    headers.forEach(h => {
+      const values = preview.map(row => row[h])
+      fallback[h] = heuristicType(h, values)
+    })
     return { detected_schema: fallback, column_mappings: fallback }
   }
 }
