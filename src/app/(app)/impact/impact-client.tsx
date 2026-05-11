@@ -21,7 +21,7 @@ interface SubmissionRow {
 
 interface ChartPoint { date: string; count: number }
 interface FormCount { name: string; count: number }
-interface PeriodCount { period: string; count: number }
+interface PeriodCount { period: string; count: number; dateRange?: string }
 
 const SUMMARY_TYPES = [
   { key: 'key_themes',    label: 'Key Themes' },
@@ -33,14 +33,13 @@ const SUMMARY_TYPES = [
 type SummaryType = typeof SUMMARY_TYPES[number]['key']
 
 function periodLabel(value: string): string {
-  if (value.includes('-Q')) {
-    const [year, q] = value.split('-')
-    return `${q} ${year}`
+  // For months (YYYY-MM), format nicely; otherwise use as-is (custom quarter labels)
+  if (/^\d{4}-\d{2}$/.test(value)) {
+    const [year, month] = value.split('-')
+    const d = new Date(Number(year), Number(month) - 1, 1)
+    return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   }
-  // YYYY-MM
-  const [year, month] = value.split('-')
-  const d = new Date(Number(year), Number(month) - 1, 1)
-  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  return value
 }
 
 export function ImpactClient() {
@@ -78,18 +77,26 @@ export function ImpactClient() {
       .map(([date, count]) => ({ date: format(new Date(date + 'T00:00:00'), 'MMM d'), count }))
   })()
 
-  // Period-grouped data (forms with periodValue assigned)
+  // Period-grouped data — sorted by periodStart date if available, else label
   const periodData: PeriodCount[] = (() => {
-    const counts: Record<string, number> = {}
+    const map = new Map<string, { count: number; start?: string; end?: string }>()
     submissions.forEach(s => {
-      const settings = s.forms?.settings as FormSettings | undefined
-      const pv = settings?.periodValue
-      if (!pv || !s.submitted_at) return
-      counts[pv] = (counts[pv] ?? 0) + 1
+      const ps = s.forms?.settings as FormSettings | undefined
+      const pv = ps?.periodValue
+      if (!pv) return
+      const existing = map.get(pv) ?? { count: 0, start: ps?.periodStart, end: ps?.periodEnd }
+      map.set(pv, { ...existing, count: existing.count + 1 })
     })
-    return Object.entries(counts)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([period, count]) => ({ period: periodLabel(period), count }))
+    return [...map.entries()]
+      .sort(([, a], [, b]) => {
+        if (a.start && b.start) return a.start.localeCompare(b.start)
+        return 0
+      })
+      .map(([period, { count, start, end }]) => ({
+        period: periodLabel(period),
+        count,
+        dateRange: start && end ? `${start} – ${end}` : undefined,
+      }))
   })()
 
   const hasPeriodData = periodData.length > 0
@@ -205,7 +212,13 @@ export function ImpactClient() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                     <XAxis dataKey="period" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickLine={false} axisLine={false} allowDecimals={false} width={24} />
-                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }} />
+                    <Tooltip
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+                      formatter={(value, _name, props) => {
+                        const dr = (props.payload as PeriodCount).dateRange
+                        return [value, dr ? `Responses (${dr})` : 'Responses']
+                      }}
+                    />
                     <Bar dataKey="count" fill={brandColor} radius={[4, 4, 0, 0]} name="Responses" />
                   </BarChart>
                 </ResponsiveContainer>

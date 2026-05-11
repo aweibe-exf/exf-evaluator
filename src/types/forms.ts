@@ -112,7 +112,9 @@ export interface FormSettings {
   confirmationMessage?: string
   // Reporting period — used for impact dashboard grouping
   periodType?: PeriodType       // 'month' | 'quarter'
-  periodValue?: string          // 'YYYY-MM' for month, 'YYYY-Q1' for quarter
+  periodValue?: string          // 'YYYY-MM' for month, free-text label for quarter
+  periodStart?: string          // ISO date: actual start of the reporting period
+  periodEnd?: string            // ISO date: actual end of the reporting period
   // Folder grouping on the forms list
   folder?: string
   // Auto-reminder configuration

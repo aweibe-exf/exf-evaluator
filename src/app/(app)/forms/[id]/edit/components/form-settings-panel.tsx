@@ -59,20 +59,28 @@ function monthOptions(): { value: string; label: string }[] {
 }
 
 
+function lastDayOfMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate()
+}
+
 export function FormSettingsPanel({ settings, onUpdate }: Props) {
   const periodType = settings.periodType
   const periodValue = settings.periodValue ?? ''
 
   function handlePeriodTypeChange(type: PeriodType | '') {
     if (!type) {
-      onUpdate({ periodType: undefined, periodValue: undefined })
+      onUpdate({ periodType: undefined, periodValue: undefined, periodStart: undefined, periodEnd: undefined })
     } else {
-      onUpdate({ periodType: type, periodValue: undefined })
+      onUpdate({ periodType: type, periodValue: undefined, periodStart: undefined, periodEnd: undefined })
     }
   }
 
-  function handlePeriodValueChange(value: string) {
-    onUpdate({ periodValue: value || undefined })
+  function handleMonthChange(value: string) {
+    if (!value) { onUpdate({ periodValue: undefined, periodStart: undefined, periodEnd: undefined }); return }
+    const [y, m] = value.split('-').map(Number)
+    const start = `${value}-01`
+    const end = `${value}-${String(lastDayOfMonth(y, m)).padStart(2, '0')}`
+    onUpdate({ periodValue: value, periodStart: start, periodEnd: end })
   }
 
   return (
@@ -91,45 +99,71 @@ export function FormSettingsPanel({ settings, onUpdate }: Props) {
             <option value="month">Month / Year</option>
             <option value="quarter">Quarter / Year</option>
           </select>
-          <p className="text-[11px] text-gray-400 mt-1">Used for impact dashboard grouping and trend reporting</p>
+          <p className="text-[11px] text-gray-400 mt-1">Used for impact dashboard grouping and report date filtering</p>
         </div>
 
         {periodType === 'month' && (
-          <div>
-            <Label htmlFor="period-month">Month</Label>
-            <select
-              id="period-month"
-              value={periodValue}
-              onChange={e => handlePeriodValueChange(e.target.value)}
-              className="w-full h-8 rounded-md border border-gray-200 px-2.5 text-[12px] bg-white focus:outline-none focus:ring-2 focus:ring-orange-400"
-              aria-label="Select month"
-            >
-              <option value="">Select month…</option>
-              {monthOptions().map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+          <div className="space-y-2">
+            <div>
+              <Label htmlFor="period-month">Month</Label>
+              <select
+                id="period-month"
+                value={periodValue}
+                onChange={e => handleMonthChange(e.target.value)}
+                className="w-full h-8 rounded-md border border-gray-200 px-2.5 text-[12px] bg-white focus:outline-none focus:ring-2 focus:ring-orange-400"
+                aria-label="Select month"
+              >
+                <option value="">Select month…</option>
+                {monthOptions().map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            {periodValue && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label htmlFor="period-start">Period start</Label>
+                  <Input id="period-start" type="date" value={settings.periodStart ?? ''} onChange={e => onUpdate({ periodStart: e.target.value || undefined })} className="h-8 text-[12px]" />
+                </div>
+                <div>
+                  <Label htmlFor="period-end">Period end</Label>
+                  <Input id="period-end" type="date" value={settings.periodEnd ?? ''} onChange={e => onUpdate({ periodEnd: e.target.value || undefined })} className="h-8 text-[12px]" />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {periodType === 'quarter' && (
-          <div>
-            <Label htmlFor="period-quarter">Quarter label</Label>
-            <Input
-              id="period-quarter"
-              value={periodValue}
-              onChange={e => handlePeriodValueChange(e.target.value)}
-              placeholder="e.g. Fall 2025, Spring Semester 2026"
-              className="h-8 text-[13px]"
-              aria-label="Quarter label"
-            />
-            <p className="text-[11px] text-gray-400 mt-1">Use any label — your quarters don&apos;t need to follow the calendar year</p>
+          <div className="space-y-2">
+            <div>
+              <Label htmlFor="period-quarter">Quarter label</Label>
+              <Input
+                id="period-quarter"
+                value={periodValue}
+                onChange={e => onUpdate({ periodValue: e.target.value || undefined })}
+                placeholder="e.g. Fall 2025, Spring Semester 2026"
+                className="h-8 text-[13px]"
+                aria-label="Quarter label"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">Use any label — your quarters don&apos;t need to follow the calendar year</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label htmlFor="period-start">Period start</Label>
+                <Input id="period-start" type="date" value={settings.periodStart ?? ''} onChange={e => onUpdate({ periodStart: e.target.value || undefined })} className="h-8 text-[12px]" />
+              </div>
+              <div>
+                <Label htmlFor="period-end">Period end</Label>
+                <Input id="period-end" type="date" value={settings.periodEnd ?? ''} onChange={e => onUpdate({ periodEnd: e.target.value || undefined })} className="h-8 text-[12px]" />
+              </div>
+            </div>
           </div>
         )}
 
         {periodValue && (
           <p className="text-[11px] text-orange-600 font-medium">
-            Assigned to: {periodValue}
+            {periodValue}{settings.periodStart && settings.periodEnd ? ` · ${settings.periodStart} → ${settings.periodEnd}` : ''}
           </p>
         )}
       </Section>
