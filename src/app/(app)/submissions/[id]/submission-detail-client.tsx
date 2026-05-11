@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Flag, CheckCircle, RotateCcw, UserRoundCog, Pencil, Save, X } from 'lucide-react'
+import { ArrowLeft, Flag, CheckCircle, RotateCcw, UserRoundCog, Pencil, Save, X, Send, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -131,6 +131,13 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
   const [savingEdit, setSavingEdit] = useState(false)
 
   const meta = ((submission as unknown as Record<string, unknown>).metadata ?? {}) as Record<string, unknown>
+
+  // Reviewer comment
+  const [reviewerComment, setReviewerComment] = useState<string>((meta.reviewerComment as string) ?? '')
+  const [savingComment, setSavingComment] = useState(false)
+  const [sendingBack, setSendingBack] = useState(false)
+  const feedbackSentAt = meta.feedbackSentAt as string | undefined
+  const feedbackSentBy = meta.feedbackSentBy as string | undefined
   const displayEmail = submission.respondent_email ?? (meta.importedRow ? 'Imported' : 'Anonymous')
 
   const allFields: FormField[] = schema?.pages.flatMap(p => p.fields) ?? []
@@ -165,6 +172,41 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
       toast.success('Responses saved')
     } else {
       toast.error('Failed to save changes')
+    }
+  }
+
+  async function saveComment() {
+    setSavingComment(true)
+    const res = await fetch(`/api/submissions/${submission.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewer_comment: reviewerComment }),
+    })
+    setSavingComment(false)
+    if (res.ok) toast.success('Comment saved')
+    else toast.error('Failed to save comment')
+  }
+
+  async function sendBack() {
+    if (!reviewerComment.trim()) { toast.error('Add a comment before sending feedback'); return }
+    setSendingBack(true)
+    const res = await fetch(`/api/submissions/${submission.id}/send-back`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment: reviewerComment }),
+    })
+    setSendingBack(false)
+    if (res.ok) {
+      const result = await res.json()
+      toast.success(`Feedback sent to ${result.to}`)
+      // Refresh to show feedbackSentAt
+      setSubmission(s => ({
+        ...s,
+        metadata: { ...meta, reviewerComment, feedbackSentAt: new Date().toISOString(), feedbackSentBy: '' },
+      } as typeof s))
+    } else {
+      const err = await res.json().catch(() => ({}))
+      toast.error(typeof err.error === 'string' ? err.error : 'Failed to send feedback')
     }
   }
 
@@ -303,6 +345,59 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
             )}
           </div>
         </>
+      )}
+
+      {/* Reviewer comment — shown for flagged submissions (or any submission with an existing comment) */}
+      {(displayStatus === 'flagged' || reviewerComment || feedbackSentAt) && !editing && (
+        <div className="mb-6 rounded-xl border border-amber-100 bg-amber-50 overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-amber-100 flex items-center gap-2">
+            <MessageSquare className="h-3.5 w-3.5 text-amber-600" aria-hidden="true" />
+            <h2 className="text-[13px] font-semibold text-amber-800">Reviewer notes</h2>
+            {feedbackSentAt && (
+              <span className="ml-auto text-[11px] text-amber-600">
+                Sent to submitter {format(new Date(feedbackSentAt), 'MMM d, yyyy')}
+                {feedbackSentBy ? ` by ${feedbackSentBy}` : ''}
+              </span>
+            )}
+          </div>
+          <div className="px-5 py-4 space-y-3">
+            <textarea
+              value={reviewerComment}
+              onChange={e => setReviewerComment(e.target.value)}
+              placeholder="Add notes about why this submission was flagged, what needs to be corrected, etc."
+              rows={4}
+              className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2.5 text-[13px] text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400 resize-y"
+              aria-label="Reviewer comment"
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-[13px] border-amber-200 text-amber-700 hover:bg-amber-100 gap-1.5"
+                onClick={saveComment}
+                disabled={savingComment || sendingBack}
+                aria-busy={savingComment}
+              >
+                {savingComment ? 'Saving…' : 'Save note'}
+              </Button>
+              {submission.respondent_email && (
+                <Button
+                  size="sm"
+                  className="h-8 text-[13px] bg-amber-600 hover:bg-amber-700 gap-1.5"
+                  onClick={sendBack}
+                  disabled={sendingBack || savingComment || !reviewerComment.trim()}
+                  aria-busy={sendingBack}
+                >
+                  <Send className="h-3 w-3" aria-hidden="true" />
+                  {sendingBack ? 'Sending…' : 'Send feedback to submitter'}
+                </Button>
+              )}
+              {!submission.respondent_email && (
+                <p className="text-[12px] text-amber-600 italic">No email on file — cannot send directly</p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Responses */}

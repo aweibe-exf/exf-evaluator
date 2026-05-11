@@ -8,6 +8,7 @@ const updateSchema = z.object({
   status: z.enum(['draft', 'submitted', 'reviewed', 'flagged']).optional(),
   data: z.record(z.string(), z.unknown()).optional(),
   respondent_email: z.string().email().nullable().optional(),
+  reviewer_comment: z.string().max(2000).nullable().optional(),
 })
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -37,7 +38,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const parsed = updateSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
 
-  const { status, data: newData, respondent_email } = parsed.data
+  const { status, data: newData, respondent_email, reviewer_comment } = parsed.data
 
   // 'flagged' is stored in metadata.flagged (not the DB enum) — fetch current row first
   const { data: existing } = await service.from('submissions').select('metadata').eq('id', id).single()
@@ -51,6 +52,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     update.status = status
     // Clear flagged when explicitly setting reviewed or submitted
     update.metadata = { ...existingMeta, flagged: false } as Json
+  }
+  // Reviewer comment stored in metadata.reviewerComment
+  if (reviewer_comment !== undefined) {
+    const currentMeta = (update.metadata ?? existingMeta) as Record<string, unknown>
+    update.metadata = { ...currentMeta, reviewerComment: reviewer_comment } as Json
   }
   if (newData) update.data = newData
   if (respondent_email !== undefined) update.respondent_email = respondent_email

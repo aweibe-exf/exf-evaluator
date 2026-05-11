@@ -124,6 +124,34 @@ export async function sendCollaborationEmail(params: {
   await sendEmail(to, subject, text, html)
 }
 
+export async function sendReviewerFeedbackEmail(params: {
+  to: string
+  reviewerName: string
+  formName: string
+  programName: string
+  comment: string
+}): Promise<void> {
+  const { to, reviewerName, formName, programName, comment } = params
+  const subject = `Your submission for "${formName}" needs attention`
+  const text = [
+    `A reviewer at ${programName} has flagged your submission for "${formName}" and left the following feedback:`,
+    '',
+    `"${comment}"`,
+    '',
+    `Please reach out to your program coordinator if you have questions or need to resubmit.`,
+  ].join('\n')
+  const html = `
+<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 16px;color:#111;">
+  <h2 style="font-size:20px;margin-bottom:8px;">Your submission needs attention</h2>
+  <p style="color:#555;">Your submission for <strong>${formName}</strong> (${programName}) has been reviewed and flagged with the following note from <strong>${reviewerName}</strong>:</p>
+  <div style="background:#fffbeb;border-left:3px solid #f59e0b;padding:12px 16px;margin:20px 0;font-size:14px;color:#333;border-radius:4px;">
+    <em>"${comment}"</em>
+  </div>
+  <p style="font-size:13px;color:#888;">Please reach out to your program coordinator if you have questions or need to make changes.</p>
+</body></html>`
+  await sendEmail(to, subject, text, html)
+}
+
 export async function sendReturnNotificationEmail(params: {
   to: string
   collaboratorEmail: string

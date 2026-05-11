@@ -41,6 +41,7 @@ import {
   LayoutGrid,
   X,
   Tag,
+  BookOpen,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -124,6 +125,12 @@ export function FormsListClient() {
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null)
   const [deletingFolderBusy, setDeletingFolderBusy] = useState(false)
 
+  // Save as template
+  const [savingAsTemplate, setSavingAsTemplate] = useState<Form | null>(null)
+  const [templateName, setTemplateName] = useState('')
+  const [templateDesc, setTemplateDesc] = useState('')
+  const [templateBusy, setTemplateBusy] = useState(false)
+
   // Rename folder
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null)
   const [renameFolderValue, setRenameFolderValue] = useState('')
@@ -195,6 +202,31 @@ export function FormsListClient() {
     })
     if (res.ok) { toast.success('Form duplicated'); fetchForms() }
     else toast.error('Failed to duplicate form')
+  }
+
+  async function handleSaveAsTemplate(e: React.FormEvent) {
+    e.preventDefault()
+    if (!currentProgram || !savingAsTemplate) return
+    setTemplateBusy(true)
+    const res = await fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: templateName.trim(),
+        description: templateDesc.trim() || undefined,
+        program_id: currentProgram.id,
+        schema: savingAsTemplate.schema,
+      }),
+    })
+    setTemplateBusy(false)
+    if (res.ok) {
+      toast.success('Saved as template — find it under Forms → Templates')
+      setSavingAsTemplate(null)
+      setTemplateName('')
+      setTemplateDesc('')
+    } else {
+      toast.error('Failed to save template')
+    }
   }
 
   async function handleDelete(id: string) {
@@ -718,6 +750,9 @@ export function FormsListClient() {
                                 <DropdownMenuItem onClick={() => handleDuplicate(form)}>
                                   <Copy className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Duplicate
                                 </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setSavingAsTemplate(form); setTemplateName(form.name); setTemplateDesc(form.description ?? '') }}>
+                                  <BookOpen className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Save as template
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => openMoveDialog(form)}>
                                   <FolderInput className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Move to folder
                                 </DropdownMenuItem>
@@ -1107,6 +1142,53 @@ export function FormsListClient() {
             <Button variant="ghost" onClick={() => { setMovingToTab(null); setTabInput('') }} disabled={savingTab}>Cancel</Button>
             <Button onClick={handleMoveToTab} className="bg-orange-600 hover:bg-orange-700" disabled={savingTab} aria-busy={savingTab}>
               {savingTab ? 'Saving…' : tabInput.trim() ? `Move to "${tabInput}"` : 'Remove from tab'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save as template dialog */}
+      <Dialog open={!!savingAsTemplate} onOpenChange={o => { if (!o) { setSavingAsTemplate(null); setTemplateName(''); setTemplateDesc('') } }}>
+        <DialogContent className="sm:max-w-md" aria-describedby="save-template-desc">
+          <DialogHeader>
+            <DialogTitle>Save as template</DialogTitle>
+            <p id="save-template-desc" className="text-[13px] text-muted-foreground mt-1">
+              Creates a reusable copy of this form&apos;s structure in your template library. Existing submissions are not included.
+            </p>
+          </DialogHeader>
+          <form onSubmit={handleSaveAsTemplate} id="save-template-form">
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <label htmlFor="tpl-save-name" className="text-[13px] font-medium text-gray-700">
+                  Template name <span aria-hidden="true" className="text-red-500">*</span>
+                </label>
+                <Input
+                  id="tpl-save-name"
+                  value={templateName}
+                  onChange={e => setTemplateName(e.target.value)}
+                  required
+                  autoFocus
+                  className="h-9 text-[13px]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="tpl-save-desc" className="text-[13px] font-medium text-gray-700">
+                  Description <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <Input
+                  id="tpl-save-desc"
+                  value={templateDesc}
+                  onChange={e => setTemplateDesc(e.target.value)}
+                  placeholder="What is this template for?"
+                  className="h-9 text-[13px]"
+                />
+              </div>
+            </div>
+          </form>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setSavingAsTemplate(null); setTemplateName(''); setTemplateDesc('') }} disabled={templateBusy}>Cancel</Button>
+            <Button type="submit" form="save-template-form" className="bg-orange-600 hover:bg-orange-700" disabled={templateBusy || !templateName.trim()} aria-busy={templateBusy}>
+              {templateBusy ? 'Saving…' : 'Save template'}
             </Button>
           </DialogFooter>
         </DialogContent>
