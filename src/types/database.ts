@@ -307,6 +307,48 @@ export type Database = {
           },
         ]
       }
+      program_narratives: {
+        Row: {
+          id: string
+          program_id: string
+          title: string
+          description: string | null
+          content: string
+          file_name: string | null
+          starts_at: string
+          ends_at: string
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          program_id: string
+          title: string
+          description?: string | null
+          content: string
+          file_name?: string | null
+          starts_at: string
+          ends_at: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          program_id?: string
+          title?: string
+          description?: string | null
+          content?: string
+          file_name?: string | null
+          starts_at?: string
+          ends_at?: string
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       programs: {
         Row: {
           archived_at: string | null

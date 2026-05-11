@@ -15,6 +15,13 @@ const schema = z.object({
 
 const client = new Anthropic()
 
+interface NarrativeContext {
+  title: string
+  content: string
+  starts_at: string
+  ends_at: string
+}
+
 function buildPrompt(
   type: string,
   programName: string,
@@ -22,7 +29,8 @@ function buildPrompt(
   dateFrom: string,
   dateTo: string,
   submissions: Record<string, unknown>[],
-  fields: FormField[]
+  fields: FormField[],
+  narratives?: NarrativeContext[]
 ): string {
   const fieldMap = Object.fromEntries(fields.map(f => [f.id, f.label || f.type]))
 
@@ -40,13 +48,18 @@ function buildPrompt(
     return `Respondent ${i + 1}:\n${answers || '  (no data)'}`
   }).join('\n\n')
 
-  const context = `Program: ${programName}\nForm: ${formName}\nPeriod: ${dateFrom} to ${dateTo}\nTotal responses: ${submissions.length}\n\n${readable}`
+  // Prepend matched award narratives as grounding context
+  const narrativeSection = narratives?.length
+    ? `AWARD NARRATIVE CONTEXT:\nThe following grant narrative(s) cover this reporting period and should be used to ground your analysis in the program's stated goals and objectives.\n\n${narratives.map(n => `[${n.title} (${n.starts_at} – ${n.ends_at})]:\n${n.content}`).join('\n\n')}\n\n---\n\n`
+    : ''
+
+  const context = `${narrativeSection}Program: ${programName}\nForm: ${formName}\nPeriod: ${dateFrom} to ${dateTo}\nTotal responses: ${submissions.length}\n\n${readable}`
 
   const prompts: Record<string, string> = {
-    trend: `You are an analyst for an extension education program. Based on the following survey responses, write a concise trend analysis (3-5 paragraphs) identifying key patterns, changes over time, and notable findings. Use specific data points where possible. Write for program administrators.\n\n${context}`,
-    impact_story: `You are a program evaluator. Based on the following survey responses, write a compelling impact narrative (3-5 paragraphs) that highlights real outcomes and benefits for participants and the community. Include specific examples. Write for funders and stakeholders.\n\n${context}`,
-    logic_model: `You are a program evaluator. Based on the following survey responses, produce a structured logic model summary with these sections: Inputs, Activities, Outputs, Short-term Outcomes, Long-term Outcomes. Use bullet points within each section. Base it on the actual data.\n\n${context}`,
-    key_themes: `You are a qualitative researcher. Based on the following survey responses, identify and describe the 4-6 most prominent themes. For each theme: give it a name, summarize it in 2-3 sentences, and note how many responses reflect it. Write clearly for a general audience.\n\n${context}`,
+    trend: `You are an analyst for an extension education program. Based on the following survey responses, write a concise trend analysis (3-5 paragraphs) identifying key patterns, changes over time, and notable findings. Use specific data points where possible. Where award narrative context is provided, connect findings to the program's stated goals. Write for program administrators.\n\n${context}`,
+    impact_story: `You are a program evaluator. Based on the following survey responses, write a compelling impact narrative (3-5 paragraphs) that highlights real outcomes and benefits for participants and the community. Include specific examples. Where award narrative context is provided, frame outcomes in relation to the program's stated objectives and intended impact. Write for funders and stakeholders.\n\n${context}`,
+    logic_model: `You are a program evaluator. Based on the following survey responses, produce a structured logic model summary with these sections: Inputs, Activities, Outputs, Short-term Outcomes, Long-term Outcomes. Use bullet points within each section. Where award narrative context is provided, ensure the logic model reflects the program's stated theory of change. Base it on the actual data.\n\n${context}`,
+    key_themes: `You are a qualitative researcher. Based on the following survey responses, identify and describe the 4-6 most prominent themes. For each theme: give it a name, summarize it in 2-3 sentences, and note how many responses reflect it. Where award narrative context is provided, note whether themes align with or diverge from the program's stated goals. Write clearly for a general audience.\n\n${context}`,
   }
 
   return prompts[type] ?? prompts.key_themes
@@ -115,6 +128,15 @@ export async function POST(request: Request) {
   })
   const formName = formNames.length === 1 ? formNames[0] : `${formNames.length} forms`
 
+  // Fetch award narratives that overlap the reporting period
+  const { data: narratives } = await service
+    .from('program_narratives')
+    .select('title, content, starts_at, ends_at')
+    .eq('program_id', program_id)
+    .lte('starts_at', date_to)
+    .gte('ends_at', date_from)
+    .order('starts_at', { ascending: true })
+
   const prompt = buildPrompt(
     summary_type,
     program.name,
@@ -122,7 +144,8 @@ export async function POST(request: Request) {
     date_from,
     date_to,
     submissions as Record<string, unknown>[],
-    fields
+    fields,
+    narratives ?? []
   )
 
   const message = await client.messages.create({
