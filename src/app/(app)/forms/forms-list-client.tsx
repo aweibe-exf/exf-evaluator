@@ -664,8 +664,8 @@ export function FormsListClient() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => { setMovingForm(null); setFolderInput('') }} disabled={movingTo}>Cancel</Button>
-            <Button onClick={handleMoveToFolder} className="bg-orange-600 hover:bg-orange-700" disabled={movingTo} aria-busy={movingTo}>
-              {movingTo ? 'Moving…' : folderInput.trim() ? `Move to "${folderInput.trim()}"` : 'Remove from folder'}
+            <Button onClick={handleMoveToFolder} className="bg-orange-600 hover:bg-orange-700 max-w-[260px] truncate" disabled={movingTo} aria-busy={movingTo}>
+              {movingTo ? 'Moving…' : folderInput.trim() ? 'Move to folder' : 'Remove from folder'}
             </Button>
           </DialogFooter>
         </DialogContent>
