@@ -9,6 +9,38 @@ const updateSchema = z.object({
   status: z.enum(['pending', 'processing', 'review', 'complete', 'failed']).optional(),
 })
 
+/**
+ * Normalise a raw string value from a CSV into a proper number.
+ * Handles suffixes: 300K → 300000, 1.5M → 1500000, 2B → 2000000000
+ * Strips: $, commas, %, leading/trailing whitespace
+ * Returns the original string unchanged if it can't be confidently parsed.
+ */
+function normalizeNumeric(raw: string): number | string {
+  const s = raw.trim().replace(/[$,\s]/g, '')
+  if (s === '') return raw
+
+  // Suffix multipliers (case-insensitive)
+  const suffixes: [RegExp, number][] = [
+    [/^(-?\d+\.?\d*)[Bb]$/, 1_000_000_000],
+    [/^(-?\d+\.?\d*)[Mm]$/, 1_000_000],
+    [/^(-?\d+\.?\d*)[Kk]$/, 1_000],
+  ]
+  for (const [re, mult] of suffixes) {
+    const m = s.match(re)
+    if (m) {
+      const n = parseFloat(m[1]) * mult
+      return isNaN(n) ? raw : n
+    }
+  }
+
+  // Strip trailing % — store as the numeric value (e.g. 75% → 75)
+  const noPercent = s.replace(/%$/, '')
+  const n = parseFloat(noPercent)
+  if (!isNaN(n) && noPercent !== '') return n
+
+  return raw
+}
+
 async function createFormFromImport(
   service: ReturnType<typeof createServiceClient>,
   job: { id: string; file_name: string; program_id: string; detected_schema: Json | null; row_count: number | null; preview_data: Json | null },
@@ -72,9 +104,12 @@ async function createFormFromImport(
       // Build data object: { fieldId: value } mapping
       const data: Record<string, unknown> = {}
       for (const [col, fieldId] of Object.entries(colToFieldId)) {
-        if (columnMappings[col] !== 'skip') {
-          data[fieldId] = row[col] ?? ''
-        }
+        const mappedType = columnMappings[col]
+        if (mappedType === 'skip') continue
+        const raw = row[col] ?? ''
+        // Normalise numeric-typed fields: "300K" → 300000, "$1,500" → 1500, etc.
+        const numericTypes = ['number', 'scale', 'rating', 'nps', 'slider']
+        data[fieldId] = numericTypes.includes(mappedType) ? normalizeNumeric(raw) : raw
       }
       // Try to extract respondent email from any email-typed field
       const emailFieldEntry = dataFieldEntries.find(([, t]) => t === 'email')

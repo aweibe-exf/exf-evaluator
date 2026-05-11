@@ -36,7 +36,7 @@ ${JSON.stringify(sample, null, 2)}
 
 The evaluation system stores submissions with these field types:
 - text: open-ended text answer
-- number: numeric value
+- number: numeric value — use this for any column with numeric data even if values use shorthand like "300K", "$1,500", "1.2M", or "75%"
 - date: date value (YYYY-MM-DD)
 - email: email address
 - single_choice: one selected option
