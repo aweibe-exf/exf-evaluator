@@ -70,7 +70,7 @@ export async function GET(request: Request) {
 
   let query = supabase
     .from('submissions')
-    .select('*, forms(name, program_id)')
+    .select('*, forms(name, program_id, settings)')
     .order('submitted_at', { ascending: false })
 
   if (formId) query = query.eq('form_id', formId)

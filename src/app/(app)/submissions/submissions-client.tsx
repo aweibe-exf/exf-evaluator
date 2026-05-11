@@ -19,10 +19,41 @@ import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { Database } from '@/types/database'
+import type { FormSettings } from '@/types/forms'
+import { Calendar } from 'lucide-react'
 
 type Submission = Database['public']['Tables']['submissions']['Row'] & {
-  forms: { name: string; program_id: string } | null
+  forms: { name: string; program_id: string; settings: FormSettings | null } | null
   effectiveStatus?: string
+}
+
+function formatPeriod(settings: FormSettings | null | undefined): string | null {
+  if (!settings) return null
+  const { periodType, periodValue, periodStart, periodEnd } = settings
+  if (periodType === 'month' && periodValue) {
+    const [year, month] = periodValue.split('-')
+    const d = new Date(Number(year), Number(month) - 1, 1)
+    return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  }
+  if (periodType === 'quarter' && periodValue) return periodValue
+  if (periodStart && periodEnd) {
+    const fmt = (iso: string) => {
+      const [y, m, d] = iso.split('-')
+      return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    }
+    return `${fmt(periodStart)} – ${fmt(periodEnd)}`
+  }
+  if (periodValue) return periodValue
+  return null
+}
+
+/** Display name for a submission — "Imported" for imported rows, email otherwise */
+function displayName(sub: Submission): string {
+  if (!sub.respondent_email) {
+    const meta = (sub.metadata ?? {}) as Record<string, unknown>
+    return meta.importedRow ? 'Imported' : 'Anonymous'
+  }
+  return sub.respondent_email
 }
 
 type StatusFilter = 'all' | 'submitted' | 'reviewed' | 'flagged' | 'draft'
@@ -187,16 +218,27 @@ export function SubmissionsClient() {
                   'w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500',
                   i < filtered.length - 1 && 'border-b border-gray-50'
                 )}
-                aria-label={`View submission from ${sub.respondent_email ?? 'unknown'}`}
+                aria-label={`View submission from ${displayName(sub)}`}
               >
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-[11px] font-semibold text-gray-500">
-                  {(sub.respondent_email?.[0] ?? '?').toUpperCase()}
+                  {(displayName(sub)[0] ?? '?').toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[14px] font-medium text-gray-800 truncate">
-                    {sub.respondent_email ?? 'Anonymous'}
+                    {displayName(sub)}
                   </p>
-                  <p className="text-[12px] text-gray-400 truncate">{sub.forms?.name ?? 'Unknown form'}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-[12px] text-gray-400 truncate">{sub.forms?.name ?? 'Unknown form'}</p>
+                    {(() => {
+                      const period = formatPeriod(sub.forms?.settings)
+                      return period ? (
+                        <span className="flex items-center gap-1 text-[10px] font-medium text-orange-600 flex-shrink-0">
+                          <Calendar className="h-2.5 w-2.5" aria-hidden="true" />
+                          {period}
+                        </span>
+                      ) : null
+                    })()}
+                  </div>
                 </div>
                 <span className="text-[12px] text-gray-400 flex-shrink-0">{submittedAt}</span>
                 <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium flex-shrink-0', cfg.className)}>

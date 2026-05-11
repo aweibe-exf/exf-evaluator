@@ -130,6 +130,9 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
   const [editData, setEditData] = useState<Record<string, unknown>>({})
   const [savingEdit, setSavingEdit] = useState(false)
 
+  const meta = ((submission as unknown as Record<string, unknown>).metadata ?? {}) as Record<string, unknown>
+  const displayEmail = submission.respondent_email ?? (meta.importedRow ? 'Imported' : 'Anonymous')
+
   const allFields: FormField[] = schema?.pages.flatMap(p => p.fields) ?? []
   const displayFields = allFields.filter(f => !LAYOUT_TYPES.includes(f.type))
   const data = (submission.data ?? {}) as Record<string, unknown>
@@ -218,7 +221,7 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-[20px] font-semibold text-gray-900 mb-1">
-            {submission.respondent_email ?? 'Anonymous'}
+            {displayEmail}
           </h1>
           <p className="text-[13px] text-gray-400">
             {submission.forms?.name} ·{' '}
