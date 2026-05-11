@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { ProgramProvider } from '@/contexts/program-context'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Toaster } from '@/components/ui/sonner'
@@ -9,6 +9,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/auth/login')
+
+  // Respondents (no program memberships) belong in /my, not the admin area
+  const service = createServiceClient()
+  const { count } = await service
+    .from('program_memberships')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+
+  if ((count ?? 0) === 0) redirect('/my')
 
   return (
     <ProgramProvider>
