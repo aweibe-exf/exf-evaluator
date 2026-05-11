@@ -6,7 +6,11 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Eye, EyeOff, Save, Send } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Save, Send, BookmarkPlus } from 'lucide-react'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { FieldPalette } from './components/field-palette'
 import { InviteDialog } from './components/invite-dialog'
 import { InvitesPanel } from './components/invites-panel'
@@ -44,6 +48,9 @@ export function FormBuilderClient({ initialForm }: Props) {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+  const [templateName, setTemplateName] = useState('')
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const currentPage = schema.pages[currentPageIndex] ?? schema.pages[0]
@@ -74,6 +81,34 @@ export function FormBuilderClient({ initialForm }: Props) {
   }
 
   function autoSave() { save(false) }
+
+  function openTemplateDialog() {
+    setTemplateName(formName)
+    setTemplateDialogOpen(true)
+  }
+
+  async function handleSaveAsTemplate(e: React.FormEvent) {
+    e.preventDefault()
+    if (!templateName.trim()) return
+    setSavingTemplate(true)
+    const res = await fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: templateName.trim(),
+        program_id: initialForm.program_id,
+        schema: schema as unknown as Record<string, unknown>,
+      }),
+    })
+    setSavingTemplate(false)
+    if (res.ok) {
+      setTemplateDialogOpen(false)
+      toast.success('Saved as template')
+    } else {
+      const err = await res.json().catch(() => ({}))
+      toast.error(typeof err.error === 'string' ? err.error : 'Failed to save template')
+    }
+  }
 
   async function handlePublish() {
     await save(false)
@@ -208,6 +243,16 @@ export function FormBuilderClient({ initialForm }: Props) {
             Preview
           </Button>
           <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-[13px] h-8"
+            onClick={openTemplateDialog}
+            aria-label="Save as template"
+          >
+            <BookmarkPlus className="h-3.5 w-3.5" aria-hidden="true" />
+            Template
+          </Button>
+          <Button
             variant="outline"
             size="sm"
             className="gap-1.5 text-[13px] h-8"
@@ -248,6 +293,43 @@ export function FormBuilderClient({ initialForm }: Props) {
         open={inviteOpen}
         onOpenChange={setInviteOpen}
       />
+
+      <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+        <DialogContent className="sm:max-w-sm" aria-describedby="template-desc">
+          <DialogHeader>
+            <DialogTitle>Save as template</DialogTitle>
+            <p id="template-desc" className="text-[13px] text-muted-foreground mt-1">
+              This form&apos;s fields will be saved as a reusable template for your program.
+            </p>
+          </DialogHeader>
+          <form onSubmit={handleSaveAsTemplate} id="save-template-form" className="py-2">
+            <label htmlFor="template-name" className="text-[13px] font-medium text-gray-700 block mb-1.5">
+              Template name <span aria-hidden="true" className="text-red-500">*</span>
+            </label>
+            <Input
+              id="template-name"
+              value={templateName}
+              onChange={e => setTemplateName(e.target.value)}
+              placeholder="e.g. Post-Event Survey"
+              required
+              autoFocus
+              className="h-9 text-[13px]"
+            />
+          </form>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setTemplateDialogOpen(false)} disabled={savingTemplate}>Cancel</Button>
+            <Button
+              type="submit"
+              form="save-template-form"
+              className="bg-orange-600 hover:bg-orange-700"
+              disabled={savingTemplate || !templateName.trim()}
+              aria-busy={savingTemplate}
+            >
+              {savingTemplate ? 'Saving…' : 'Save template'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Three-panel builder */}
       <div className="flex flex-1 overflow-hidden" role="main" aria-label="Form builder">
