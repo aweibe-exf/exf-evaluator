@@ -11,13 +11,19 @@ export default async function ReportEditorPage({ params }: { params: Promise<{ i
   const { data: report } = await supabase.from('reports').select('*').eq('id', id).single()
   if (!report) notFound()
 
-  // Fetch available forms for the program
+  // Fetch available forms with settings (for period info)
   const { data: forms } = await supabase
     .from('forms')
-    .select('id, name')
+    .select('id, name, settings')
     .eq('program_id', report.program_id)
     .eq('status', 'active')
     .order('name')
 
-  return <ReportEditorClient initialReport={report} forms={forms ?? []} />
+  const formRows = (forms ?? []).map(f => ({
+    id: f.id,
+    name: f.name,
+    settings: f.settings as Record<string, unknown> | null,
+  }))
+
+  return <ReportEditorClient initialReport={report} forms={formRows} />
 }

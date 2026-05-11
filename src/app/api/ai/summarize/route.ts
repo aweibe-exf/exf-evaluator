@@ -6,7 +6,8 @@ import type { FormSchema, FormField } from '@/types/forms'
 
 const schema = z.object({
   program_id: z.string().min(1),
-  form_id: z.string().min(1).optional(),
+  form_id: z.string().min(1).optional(),           // single form (impact dashboard compat)
+  form_ids: z.array(z.string()).optional(),         // multi-select (report editor)
   date_from: z.string().min(1),
   date_to: z.string().min(1),
   summary_type: z.enum(['key_themes', 'trend', 'impact_story', 'logic_model']),
@@ -61,11 +62,20 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
 
-  const { program_id, form_id, date_from, date_to, summary_type } = parsed.data
+  const { program_id, form_id, form_ids, date_from, date_to, summary_type } = parsed.data
 
   // Fetch program name
   const { data: program } = await supabase.from('programs').select('name').eq('id', program_id).single()
   if (!program) return NextResponse.json({ error: 'Program not found' }, { status: 404 })
+
+  // Resolve which form IDs to query
+  // Priority: form_ids array > single form_id > all forms in program
+  let effectiveFormIds: string[] | null = null
+  if (form_ids && form_ids.length > 0) {
+    effectiveFormIds = form_ids
+  } else if (form_id) {
+    effectiveFormIds = [form_id]
+  }
 
   // Fetch submissions in date range
   let subQuery = supabase
@@ -75,27 +85,35 @@ export async function POST(request: Request) {
     .gte('submitted_at', date_from)
     .lte('submitted_at', date_to + 'T23:59:59Z')
 
-  if (form_id) {
-    subQuery = subQuery.eq('form_id', form_id)
+  if (effectiveFormIds) {
+    subQuery = subQuery.in('form_id', effectiveFormIds)
   } else {
-    // Filter by program via join — fetch form IDs first
-    const { data: forms } = await supabase.from('forms').select('id').eq('program_id', program_id)
-    const formIds = forms?.map(f => f.id) ?? []
-    if (formIds.length === 0) return NextResponse.json({ error: 'No forms found for this program' }, { status: 404 })
-    subQuery = subQuery.in('form_id', formIds)
+    // Fall back to all forms in the program
+    const { data: programForms } = await supabase.from('forms').select('id').eq('program_id', program_id)
+    const programFormIds = programForms?.map(f => f.id) ?? []
+    if (programFormIds.length === 0) return NextResponse.json({ error: 'No forms found for this program' }, { status: 404 })
+    subQuery = subQuery.in('form_id', programFormIds)
   }
 
   const { data: submissions, error: subErr } = await subQuery
   if (subErr) return NextResponse.json({ error: subErr.message }, { status: 500 })
   if (!submissions?.length) return NextResponse.json({ error: 'No submissions found in this date range' }, { status: 404 })
 
-  // Get fields from form schema
-  const firstForm = submissions[0]?.forms as { name: string; schema: unknown } | null
-  const formSchema = firstForm?.schema as FormSchema | null
-  const fields: FormField[] = formSchema?.pages.flatMap(p => p.fields) ?? []
-  const formName = form_id
-    ? (firstForm?.name ?? 'Unknown form')
-    : `${program.name} (all forms)`
+  // Aggregate fields from all returned forms (for multi-form analysis)
+  const seenSchemas = new Set<string>()
+  const fields: FormField[] = []
+  const formNames: string[] = []
+  submissions.forEach(s => {
+    const f = s.forms as { name: string; schema: unknown } | null
+    if (!f) return
+    if (!seenSchemas.has(f.name)) {
+      seenSchemas.add(f.name)
+      formNames.push(f.name)
+      const schema = f.schema as FormSchema | null
+      fields.push(...(schema?.pages.flatMap(p => p.fields) ?? []))
+    }
+  })
+  const formName = formNames.length === 1 ? formNames[0] : `${formNames.length} forms`
 
   const prompt = buildPrompt(
     summary_type,
@@ -121,10 +139,11 @@ export async function POST(request: Request) {
     : summary_type === 'logic_model' ? 'report_section'
     : 'submission'
 
-  // Persist to ai_summaries
+  // Persist to ai_summaries — only store form_id when a single form was queried
+  const persistFormId = effectiveFormIds?.length === 1 ? effectiveFormIds[0] : (form_id ?? null)
   const { data: saved, error: saveErr } = await service.from('ai_summaries').insert({
     program_id,
-    form_id: form_id ?? null,
+    form_id: persistFormId,
     date_from,
     date_to,
     summary_type: dbSummaryType,
