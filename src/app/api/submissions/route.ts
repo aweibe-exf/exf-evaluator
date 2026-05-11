@@ -1,0 +1,83 @@
+import { NextResponse } from 'next/server'
+import { z } from 'zod'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
+
+const submitSchema = z.object({
+  token: z.string().min(1),
+  form_id: z.string().min(1),
+  data: z.record(z.string(), z.unknown()),
+  status: z.enum(['draft', 'submitted']).optional(),
+})
+
+// Public: submit a form response via token
+export async function POST(request: Request) {
+  const service = createServiceClient()
+
+  const body = await request.json()
+  const parsed = submitSchema.safeParse(body)
+  if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
+
+  const { token, form_id, data, status = 'submitted' } = parsed.data
+
+  // Validate token
+  const { data: tokenRow, error: tokenErr } = await service
+    .from('submission_tokens')
+    .select('*')
+    .eq('token', token)
+    .eq('form_id', form_id)
+    .single()
+
+  if (tokenErr || !tokenRow) return NextResponse.json({ error: 'Invalid token' }, { status: 403 })
+  if (tokenRow.used_at) return NextResponse.json({ error: 'Token already used' }, { status: 409 })
+  if (new Date(tokenRow.expires_at) < new Date()) return NextResponse.json({ error: 'Token expired' }, { status: 410 })
+
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? undefined
+
+  const { data: submission, error } = await service
+    .from('submissions')
+    .insert({
+      form_id,
+      token_id: tokenRow.id,
+      respondent_email: tokenRow.email,
+      data: data as never,
+      status,
+      submitted_at: status === 'submitted' ? new Date().toISOString() : null,
+      ip_address: ip ?? null,
+    })
+    .select()
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Mark token as used only on final submit
+  if (status === 'submitted') {
+    await service.from('submission_tokens').update({ used_at: new Date().toISOString() }).eq('id', tokenRow.id)
+  }
+
+  return NextResponse.json(submission, { status: 201 })
+}
+
+// Staff: list submissions for a form or program
+export async function GET(request: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { searchParams } = new URL(request.url)
+  const formId = searchParams.get('form_id')
+  const programId = searchParams.get('program_id')
+  const status = searchParams.get('status')
+
+  let query = supabase
+    .from('submissions')
+    .select('*, forms(name, program_id)')
+    .order('submitted_at', { ascending: false })
+
+  if (formId) query = query.eq('form_id', formId)
+  if (programId) query = query.eq('forms.program_id', programId)
+  if (status) query = query.eq('status', status as 'draft' | 'submitted' | 'reviewed')
+
+  const { data, error } = await query
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(data)
+}
