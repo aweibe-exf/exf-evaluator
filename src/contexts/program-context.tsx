@@ -37,9 +37,11 @@ export function ProgramProvider({ children }: { children: React.ReactNode }) {
     const myMemberships: Membership[] = memberData ?? []
     setMemberships(myMemberships)
 
+    const isSuperAdmin = myMemberships.some(m => m.role === 'super_admin')
     const myProgramIds = new Set(myMemberships.map(m => m.program_id))
     const allPrograms: Program[] = programData ?? []
-    const myPrograms = allPrograms.filter(p => myProgramIds.has(p.id))
+    // Super admins see all programs; others only see their own
+    const myPrograms = isSuperAdmin ? allPrograms : allPrograms.filter(p => myProgramIds.has(p.id))
     setPrograms(myPrograms)
 
     // Restore last selected program from localStorage
@@ -58,9 +60,13 @@ export function ProgramProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const currentRole = currentProgram
-    ? (memberships.find(m => m.program_id === currentProgram.id)?.role ?? null)
-    : null
+  // super_admin is platform-level: if the user has it in any program, they're always super_admin
+  const isSuperAdmin = memberships.some(m => m.role === 'super_admin')
+  const currentRole: UserRole | null = isSuperAdmin
+    ? 'super_admin'
+    : currentProgram
+      ? (memberships.find(m => m.program_id === currentProgram.id)?.role ?? null)
+      : null
 
   return (
     <ProgramContext.Provider value={{
