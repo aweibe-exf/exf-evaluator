@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import {
   ArrowLeft, Save, Sparkles, Bold, Italic, List, ListOrdered,
   Heading2, Heading3, Quote, Minus, Calendar, CheckSquare, Square,
-  Download,
+  Download, CheckCircle2, RotateCcw,
 } from 'lucide-react'
 import { format, subDays } from 'date-fns'
 import {
@@ -270,6 +270,8 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
   const [dirty, setDirty] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [status, setStatus] = useState<'draft' | 'final'>(initialReport.status as 'draft' | 'final' ?? 'draft')
+  const [togglingStatus, setTogglingStatus] = useState(false)
   const [summaryType, setSummaryType] = useState<SummaryType>('key_themes')
 
   // Form multi-select — default: all forms selected
@@ -331,6 +333,23 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
   }, [editor, name, initialReport.id])
 
   function autoSave() { save(false) }
+
+  async function handleToggleStatus() {
+    const newStatus = status === 'draft' ? 'final' : 'draft'
+    setTogglingStatus(true)
+    const res = await fetch(`/api/reports/${initialReport.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    })
+    setTogglingStatus(false)
+    if (res.ok) {
+      setStatus(newStatus)
+      toast.success(newStatus === 'final' ? 'Report marked as final' : 'Reverted to draft')
+    } else {
+      toast.error('Failed to update status')
+    }
+  }
 
   async function handleExport() {
     if (!editor) return
@@ -435,6 +454,19 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
           <Button variant="outline" size="sm" className="gap-1.5 text-[13px] h-8" onClick={handleExport} disabled={exporting} aria-label="Download as Word document">
             <Download className={iconSize} aria-hidden="true" />
             {exporting ? 'Exporting…' : '.docx'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className={`gap-1.5 text-[13px] h-8 ${status === 'final' ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50' : 'text-gray-600'}`}
+            onClick={handleToggleStatus}
+            disabled={togglingStatus}
+            aria-label={status === 'draft' ? 'Mark report as final' : 'Revert report to draft'}
+          >
+            {status === 'final'
+              ? <><RotateCcw className={iconSize} aria-hidden="true" /> Revert to draft</>
+              : <><CheckCircle2 className={iconSize} aria-hidden="true" /> Mark as final</>
+            }
           </Button>
           <Button variant="outline" size="sm" className="gap-1.5 text-[13px] h-8" onClick={() => save()} disabled={saving} aria-label="Save report">
             <Save className={iconSize} aria-hidden="true" /> Save

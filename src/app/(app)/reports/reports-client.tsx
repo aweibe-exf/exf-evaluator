@@ -12,7 +12,7 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, FileBarChart2, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { Plus, FileBarChart2, MoreHorizontal, Pencil, Trash2, CheckCircle2, RotateCcw } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -62,6 +62,21 @@ export function ReportsClient() {
     } else {
       toast.error('Failed to create report')
       setSubmitting(false)
+    }
+  }
+
+  async function handleStatusChange(id: string, newStatus: 'draft' | 'final') {
+    const res = await fetch(`/api/reports/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    })
+    if (res.ok) {
+      const updated: Report = await res.json()
+      setReports(r => r.map(x => x.id === id ? updated : x))
+      toast.success(newStatus === 'final' ? 'Report marked as final' : 'Report reverted to draft')
+    } else {
+      toast.error('Failed to update report status')
     }
   }
 
@@ -138,10 +153,19 @@ export function ReportsClient() {
                     >
                       <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuContent align="end" className="w-44">
                       <DropdownMenuItem onClick={() => router.push(`/reports/${report.id}`)}>
                         <Pencil className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Edit
                       </DropdownMenuItem>
+                      {report.status === 'draft' ? (
+                        <DropdownMenuItem onClick={() => handleStatusChange(report.id, 'final')}>
+                          <CheckCircle2 className="mr-2 h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> Mark as final
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem onClick={() => handleStatusChange(report.id, 'draft')}>
+                          <RotateCcw className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Revert to draft
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => handleDelete(report.id)} className="text-red-500 focus:text-red-500">
                         <Trash2 className="mr-2 h-3.5 w-3.5" aria-hidden="true" /> Delete
