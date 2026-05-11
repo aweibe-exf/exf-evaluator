@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Flag, CheckCircle, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Flag, CheckCircle, RotateCcw, UserRoundCog } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { formatDistanceToNow, format } from 'date-fns'
 import type { FormSchema, FormField } from '@/types/forms'
@@ -45,6 +46,9 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
   const router = useRouter()
   const [submission, setSubmission] = useState(initial)
   const [updating, setUpdating] = useState(false)
+  const [reassigning, setReassigning] = useState(false)
+  const [reassignEmail, setReassignEmail] = useState('')
+  const [reassignBusy, setReassignBusy] = useState(false)
 
   const allFields: FormField[] = schema?.pages.flatMap(p => p.fields) ?? []
   const data = (submission.data ?? {}) as Record<string, unknown>
@@ -67,6 +71,26 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
       toast.success(`Marked as ${status}`)
     } else {
       toast.error('Failed to update status')
+    }
+  }
+
+  async function handleReassign() {
+    const email = reassignEmail.trim()
+    if (!email) return
+    setReassignBusy(true)
+    const res = await fetch(`/api/submissions/${submission.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ respondent_email: email }),
+    })
+    setReassignBusy(false)
+    if (res.ok) {
+      setSubmission(s => ({ ...s, respondent_email: email }))
+      setReassigning(false)
+      setReassignEmail('')
+      toast.success(`Reassigned to ${email}`)
+    } else {
+      toast.error('Failed to reassign submission')
     }
   }
 
@@ -127,7 +151,7 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
         </div>
       )}
       {(displayStatus === 'reviewed' || displayStatus === 'flagged') && (
-        <div className="mb-6">
+        <div className="mb-4">
           <Button
             variant="ghost"
             size="sm"
@@ -140,6 +164,46 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
           </Button>
         </div>
       )}
+
+      {/* Reassign */}
+      <div className="mb-6">
+        {!reassigning ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-[13px] h-8 text-gray-400 hover:text-gray-700"
+            onClick={() => { setReassigning(true); setReassignEmail(submission.respondent_email ?? '') }}
+          >
+            <UserRoundCog className="h-3.5 w-3.5" aria-hidden="true" />
+            Reassign to someone else
+          </Button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Input
+              type="email"
+              value={reassignEmail}
+              onChange={e => setReassignEmail(e.target.value)}
+              placeholder="new@email.com"
+              className="h-8 text-[13px] max-w-xs"
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') handleReassign(); if (e.key === 'Escape') setReassigning(false) }}
+              aria-label="New respondent email"
+            />
+            <Button
+              size="sm"
+              className="h-8 text-[13px] bg-orange-600 hover:bg-orange-700"
+              onClick={handleReassign}
+              disabled={reassignBusy || !reassignEmail.trim() || reassignEmail.trim() === submission.respondent_email}
+              aria-busy={reassignBusy}
+            >
+              {reassignBusy ? 'Saving…' : 'Reassign'}
+            </Button>
+            <Button variant="ghost" size="sm" className="h-8 text-[13px]" onClick={() => setReassigning(false)}>
+              Cancel
+            </Button>
+          </div>
+        )}
+      </div>
 
       {/* Responses */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">

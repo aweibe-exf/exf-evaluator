@@ -7,6 +7,7 @@ const updateSchema = z.object({
   // 'flagged' is a UI-only concept stored in metadata.flagged; DB enum is draft|submitted|reviewed
   status: z.enum(['draft', 'submitted', 'reviewed', 'flagged']).optional(),
   data: z.record(z.string(), z.unknown()).optional(),
+  respondent_email: z.string().email().nullable().optional(),
 })
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -36,7 +37,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const parsed = updateSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
 
-  const { status, data: newData } = parsed.data
+  const { status, data: newData, respondent_email } = parsed.data
 
   // 'flagged' is stored in metadata.flagged (not the DB enum) — fetch current row first
   const { data: existing } = await service.from('submissions').select('metadata').eq('id', id).single()
@@ -52,6 +53,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     update.metadata = { ...existingMeta, flagged: false } as Json
   }
   if (newData) update.data = newData
+  if (respondent_email !== undefined) update.respondent_email = respondent_email
 
   const { data, error } = await service
     .from('submissions')

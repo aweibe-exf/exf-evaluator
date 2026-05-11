@@ -6,9 +6,17 @@ import { useProgram } from '@/contexts/program-context'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
-import { Search, Inbox, ChevronRight, Download } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import { Search, Inbox, ChevronRight, Download, UserRoundCog } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatDistanceToNow } from 'date-fns'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { Database } from '@/types/database'
 
@@ -40,6 +48,10 @@ export function SubmissionsClient() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [bulkReassignOpen, setBulkReassignOpen] = useState(false)
+  const [bulkFrom, setBulkFrom] = useState('')
+  const [bulkTo, setBulkTo] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   const fetchSubmissions = useCallback(async () => {
     if (!currentProgram) return
@@ -52,6 +64,27 @@ export function SubmissionsClient() {
   }, [currentProgram, statusFilter])
 
   useEffect(() => { fetchSubmissions() }, [fetchSubmissions])
+
+  async function handleBulkReassign() {
+    if (!currentProgram || !bulkFrom.trim() || !bulkTo.trim()) return
+    setBulkBusy(true)
+    const res = await fetch('/api/submissions/reassign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from_email: bulkFrom.trim(), to_email: bulkTo.trim(), program_id: currentProgram.id }),
+    })
+    setBulkBusy(false)
+    if (res.ok) {
+      const { updated } = await res.json()
+      toast.success(`${updated} submission${updated !== 1 ? 's' : ''} reassigned to ${bulkTo.trim()}`)
+      setBulkReassignOpen(false)
+      setBulkFrom('')
+      setBulkTo('')
+      fetchSubmissions()
+    } else {
+      toast.error('Failed to reassign submissions')
+    }
+  }
 
   const filtered = submissions.filter(s => {
     const email = s.respondent_email?.toLowerCase() ?? ''
@@ -69,16 +102,28 @@ export function SubmissionsClient() {
             {submissions.length} response{submissions.length !== 1 ? 's' : ''} in {currentProgram?.name}
           </p>
         </div>
-        {currentProgram && submissions.length > 0 && (
-          <a
-            href={`/api/submissions/export?program_id=${currentProgram.id}${statusFilter !== 'all' ? `&status=${statusFilter}` : ''}`}
-            download
-          >
-            <Button variant="outline" size="sm" className="gap-1.5 h-8 text-[13px]">
-              <Download className="h-3.5 w-3.5" aria-hidden="true" /> Export CSV
+        <div className="flex items-center gap-2">
+          {currentProgram && submissions.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8 text-[13px]"
+              onClick={() => setBulkReassignOpen(true)}
+            >
+              <UserRoundCog className="h-3.5 w-3.5" aria-hidden="true" /> Reassign person
             </Button>
-          </a>
-        )}
+          )}
+          {currentProgram && submissions.length > 0 && (
+            <a
+              href={`/api/submissions/export?program_id=${currentProgram.id}${statusFilter !== 'all' ? `&status=${statusFilter}` : ''}`}
+              download
+            >
+              <Button variant="outline" size="sm" className="gap-1.5 h-8 text-[13px]">
+                <Download className="h-3.5 w-3.5" aria-hidden="true" /> Export CSV
+              </Button>
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -163,6 +208,64 @@ export function SubmissionsClient() {
           })}
         </div>
       )}
+
+      {/* Bulk reassign dialog */}
+      <Dialog open={bulkReassignOpen} onOpenChange={o => { setBulkReassignOpen(o); if (!o) { setBulkFrom(''); setBulkTo('') } }}>
+        <DialogContent className="sm:max-w-md" aria-describedby="bulk-reassign-desc">
+          <DialogHeader>
+            <DialogTitle>Reassign submissions</DialogTitle>
+            <p id="bulk-reassign-desc" className="text-[13px] text-muted-foreground mt-1">
+              Move all submissions from one person to another — useful when someone retires or hands off their account.
+            </p>
+          </DialogHeader>
+          <div className="py-2 space-y-4">
+            <div className="space-y-1.5">
+              <label htmlFor="bulk-from" className="text-[13px] font-medium text-gray-700">
+                From (current owner)
+              </label>
+              <Input
+                id="bulk-from"
+                type="email"
+                placeholder="retiring@email.com"
+                value={bulkFrom}
+                onChange={e => setBulkFrom(e.target.value)}
+                className="h-9 text-[13px]"
+                autoFocus
+              />
+              {bulkFrom.trim() && (() => {
+                const count = submissions.filter(s => s.respondent_email === bulkFrom.trim()).length
+                return count > 0
+                  ? <p className="text-[11px] text-orange-600">{count} submission{count !== 1 ? 's' : ''} will be reassigned</p>
+                  : <p className="text-[11px] text-gray-400">No submissions found for this email in current view</p>
+              })()}
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="bulk-to" className="text-[13px] font-medium text-gray-700">
+                To (new owner)
+              </label>
+              <Input
+                id="bulk-to"
+                type="email"
+                placeholder="successor@email.com"
+                value={bulkTo}
+                onChange={e => setBulkTo(e.target.value)}
+                className="h-9 text-[13px]"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBulkReassignOpen(false)} disabled={bulkBusy}>Cancel</Button>
+            <Button
+              onClick={handleBulkReassign}
+              className="bg-orange-600 hover:bg-orange-700"
+              disabled={bulkBusy || !bulkFrom.trim() || !bulkTo.trim() || bulkFrom.trim() === bulkTo.trim()}
+              aria-busy={bulkBusy}
+            >
+              {bulkBusy ? 'Reassigning…' : 'Reassign all'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
