@@ -11,10 +11,161 @@ import { Button } from '@/components/ui/button'
 import {
   ArrowLeft, Save, Sparkles, Bold, Italic, List, ListOrdered,
   Heading2, Heading3, Quote, Minus, Calendar, CheckSquare, Square,
+  Download,
 } from 'lucide-react'
 import { format, subDays } from 'date-fns'
+import {
+  Document, Packer, Paragraph, TextRun, HeadingLevel,
+  AlignmentType, BorderStyle, ShadingType,
+  LevelFormat,
+} from 'docx'
 import type { Database } from '@/types/database'
 import type { FormSettings } from '@/types/forms'
+
+// ---------------------------------------------------------------------------
+// HTML → docx conversion
+// ---------------------------------------------------------------------------
+
+interface RunStyle { bold?: boolean; italics?: boolean; strike?: boolean }
+
+function textRunsFromNode(node: Node, style: RunStyle = {}): TextRun[] {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent ?? ''
+    return text ? [new TextRun({ text, ...style })] : []
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return []
+  const el = node as Element
+  const tag = el.tagName.toLowerCase()
+  const childStyle: RunStyle = {
+    bold: style.bold || tag === 'strong' || tag === 'b',
+    italics: style.italics || tag === 'em' || tag === 'i',
+    strike: style.strike || tag === 's' || tag === 'del',
+  }
+  return Array.from(el.childNodes).flatMap(c => textRunsFromNode(c, childStyle))
+}
+
+function paragraphsFromNode(node: Element): Paragraph[] {
+  const tag = node.tagName.toLowerCase()
+
+  // Headings
+  const headingMap: Record<string, typeof HeadingLevel[keyof typeof HeadingLevel]> = {
+    h1: HeadingLevel.HEADING_1,
+    h2: HeadingLevel.HEADING_2,
+    h3: HeadingLevel.HEADING_3,
+    h4: HeadingLevel.HEADING_4,
+  }
+  if (headingMap[tag]) {
+    return [new Paragraph({
+      text: node.textContent ?? '',
+      heading: headingMap[tag],
+      spacing: { before: 240, after: 80 },
+    })]
+  }
+
+  // Horizontal rule
+  if (tag === 'hr') {
+    return [new Paragraph({
+      border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC', space: 1 } },
+      spacing: { before: 120, after: 120 },
+    })]
+  }
+
+  // Blockquote
+  if (tag === 'blockquote') {
+    return [new Paragraph({
+      children: Array.from(node.childNodes).flatMap(c =>
+        c.nodeType === Node.ELEMENT_NODE ? textRunsFromNode(c) : []
+      ),
+      indent: { left: 720 },
+      shading: { type: ShadingType.CLEAR, fill: 'F3F4F6' },
+      spacing: { before: 80, after: 80 },
+    })]
+  }
+
+  // Bullet list
+  if (tag === 'ul') {
+    return Array.from(node.querySelectorAll(':scope > li')).map(li =>
+      new Paragraph({
+        children: Array.from(li.childNodes).flatMap(c => textRunsFromNode(c)),
+        bullet: { level: 0 },
+        spacing: { before: 40, after: 40 },
+      })
+    )
+  }
+
+  // Ordered list
+  if (tag === 'ol') {
+    return Array.from(node.querySelectorAll(':scope > li')).map((li, idx) =>
+      new Paragraph({
+        children: [
+          new TextRun({ text: `${idx + 1}. ` }),
+          ...Array.from(li.childNodes).flatMap(c => textRunsFromNode(c)),
+        ],
+        spacing: { before: 40, after: 40 },
+      })
+    )
+  }
+
+  // Regular paragraph (p, div, etc.)
+  const runs = Array.from(node.childNodes).flatMap(c => textRunsFromNode(c))
+  if (!runs.length && !node.textContent?.trim()) return []
+  return [new Paragraph({
+    children: runs.length ? runs : [new TextRun({ text: node.textContent ?? '' })],
+    spacing: { before: 80, after: 80 },
+  })]
+}
+
+function htmlToDocxParagraphs(html: string): Paragraph[] {
+  const div = document.createElement('div')
+  div.innerHTML = html
+  return Array.from(div.children).flatMap(el => paragraphsFromNode(el as Element))
+}
+
+async function downloadAsDocx(reportName: string, html: string) {
+  const paragraphs = htmlToDocxParagraphs(html)
+
+  const doc = new Document({
+    numbering: {
+      config: [{
+        reference: 'ordered-list',
+        levels: [{
+          level: 0,
+          format: LevelFormat.DECIMAL,
+          text: '%1.',
+          alignment: AlignmentType.LEFT,
+          style: { paragraph: { indent: { left: 720, hanging: 360 } } },
+        }],
+      }],
+    },
+    sections: [{
+      properties: {},
+      children: [
+        new Paragraph({
+          text: reportName,
+          heading: HeadingLevel.TITLE,
+          spacing: { after: 200 },
+        }),
+        new Paragraph({
+          children: [new TextRun({
+            text: `Generated ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`,
+            color: '6B7280',
+            size: 20,
+          })],
+          spacing: { after: 400 },
+        }),
+        ...paragraphs,
+      ],
+    }],
+  })
+
+  const blob = await Packer.toBlob(doc)
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${reportName.replace(/[^a-z0-9]+/gi, '_')}.docx`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 type Report = Database['public']['Tables']['reports']['Row']
 
@@ -118,6 +269,7 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [summaryType, setSummaryType] = useState<SummaryType>('key_themes')
 
   // Form multi-select — default: all forms selected
@@ -179,6 +331,18 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
   }, [editor, name, initialReport.id])
 
   function autoSave() { save(false) }
+
+  async function handleExport() {
+    if (!editor) return
+    setExporting(true)
+    try {
+      await downloadAsDocx(name, editor.getHTML())
+      toast.success('Downloaded as .docx')
+    } catch {
+      toast.error('Failed to export document')
+    }
+    setExporting(false)
+  }
 
   function toggleForm(id: string) {
     setSelectedFormIds(prev => {
@@ -267,9 +431,15 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
           {saving && <span className="text-[12px] text-gray-400 flex-shrink-0" aria-live="polite">Saving…</span>}
           {dirty && !saving && <span className="text-[12px] text-gray-400 flex-shrink-0" aria-live="polite">Unsaved</span>}
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5 text-[13px] h-8 flex-shrink-0" onClick={() => save()} disabled={saving} aria-label="Save report">
-          <Save className={iconSize} aria-hidden="true" /> Save
-        </Button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button variant="outline" size="sm" className="gap-1.5 text-[13px] h-8" onClick={handleExport} disabled={exporting} aria-label="Download as Word document">
+            <Download className={iconSize} aria-hidden="true" />
+            {exporting ? 'Exporting…' : '.docx'}
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5 text-[13px] h-8" onClick={() => save()} disabled={saving} aria-label="Save report">
+            <Save className={iconSize} aria-hidden="true" /> Save
+          </Button>
+        </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
