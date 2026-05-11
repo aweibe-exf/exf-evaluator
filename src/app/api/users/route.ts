@@ -6,7 +6,7 @@ import { logAudit } from '@/lib/audit'
 const inviteSchema = z.object({
   program_id: z.string().min(1),
   email: z.string().email(),
-  role: z.enum(['program_admin', 'staff', 'viewer']),
+  role: z.enum(['super_admin', 'program_admin', 'staff', 'viewer']),
 })
 
 export async function GET(request: Request) {

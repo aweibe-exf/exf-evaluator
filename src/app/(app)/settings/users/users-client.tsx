@@ -15,7 +15,7 @@ import { Plus, UserCircle2, MoreHorizontal, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
-type UserRole = 'program_admin' | 'staff' | 'viewer'
+type UserRole = 'super_admin' | 'program_admin' | 'staff' | 'viewer'
 
 interface Member {
   id: string
@@ -25,13 +25,14 @@ interface Member {
   created_at: string
 }
 
-const ROLE_CONFIG: Record<UserRole, { label: string; className: string }> = {
-  program_admin: { label: 'Admin',  className: 'bg-orange-50 text-orange-700 border-orange-100' },
-  staff:         { label: 'Staff',  className: 'bg-blue-50 text-blue-700 border-blue-100' },
-  viewer:        { label: 'Viewer', className: 'bg-gray-50 text-gray-500 border-gray-100' },
+const ROLE_CONFIG: Record<UserRole, { label: string; className: string; description: string }> = {
+  super_admin:   { label: 'Super Admin', className: 'bg-purple-50 text-purple-700 border-purple-100', description: '— Full platform access, manages all programs' },
+  program_admin: { label: 'Admin',       className: 'bg-orange-50 text-orange-700 border-orange-100', description: '— Full access, can manage members' },
+  staff:         { label: 'Staff',       className: 'bg-blue-50 text-blue-700 border-blue-100',       description: '— Can view & manage submissions' },
+  viewer:        { label: 'Viewer',      className: 'bg-gray-50 text-gray-500 border-gray-100',        description: '— Read-only access' },
 }
 
-const ROLES: UserRole[] = ['program_admin', 'staff', 'viewer']
+const ROLES: UserRole[] = ['super_admin', 'program_admin', 'staff', 'viewer']
 
 export function UsersClient() {
   const { currentProgram, currentRole } = useProgram()
@@ -39,7 +40,7 @@ export function UsersClient() {
   const [loading, setLoading] = useState(true)
   const [inviting, setInviting] = useState(false)
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<UserRole>('staff')
+  const [role, setRole] = useState<UserRole>('program_admin')
   const [submitting, setSubmitting] = useState(false)
 
   const canManage = currentRole && ['super_admin', 'program_admin'].includes(currentRole)
@@ -238,9 +239,7 @@ export function UsersClient() {
                       />
                       <span>
                         <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium', cfg.className)}>{cfg.label}</span>
-                        <span className="ml-2 text-[12px] text-gray-500">
-                          {r === 'program_admin' ? '— Full access, can manage members' : r === 'staff' ? '— Can view & manage submissions' : '— Read-only access'}
-                        </span>
+                        <span className="ml-2 text-[12px] text-gray-500">{ROLE_CONFIG[r].description}</span>
                       </span>
                     </label>
                   )

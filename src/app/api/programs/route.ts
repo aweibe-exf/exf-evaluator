@@ -29,11 +29,11 @@ export async function POST(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Auto-enroll creator as program_admin
+  // Auto-enroll creator as super_admin
   await service.from('program_memberships').insert({
     program_id: data.id,
     user_id: user.id,
-    role: 'program_admin',
+    role: 'super_admin',
   })
 
   await logAudit(service, {

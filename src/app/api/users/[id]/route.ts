@@ -4,7 +4,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
 
 const updateSchema = z.object({
-  role: z.enum(['program_admin', 'staff', 'viewer']),
+  role: z.enum(['super_admin', 'program_admin', 'staff', 'viewer']),
 })
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
