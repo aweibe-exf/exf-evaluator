@@ -58,20 +58,6 @@ function monthOptions(): { value: string; label: string }[] {
   return options.reverse()
 }
 
-// Generate quarter options for the past 3 years + next 4 quarters
-function quarterOptions(): { value: string; label: string }[] {
-  const now = new Date()
-  const currentQ = Math.floor(now.getMonth() / 3) + 1
-  const options: { value: string; label: string }[] = []
-  for (let yOffset = -3; yOffset <= 1; yOffset++) {
-    const year = now.getFullYear() + yOffset
-    const maxQ = yOffset === 1 ? currentQ + 1 : 4
-    for (let q = 1; q <= maxQ && q <= 4; q++) {
-      options.push({ value: `${year}-Q${q}`, label: `Q${q} ${year}` })
-    }
-  }
-  return options.reverse()
-}
 
 export function FormSettingsPanel({ settings, onUpdate }: Props) {
   const periodType = settings.periodType
@@ -128,19 +114,16 @@ export function FormSettingsPanel({ settings, onUpdate }: Props) {
 
         {periodType === 'quarter' && (
           <div>
-            <Label htmlFor="period-quarter">Quarter</Label>
-            <select
+            <Label htmlFor="period-quarter">Quarter label</Label>
+            <Input
               id="period-quarter"
               value={periodValue}
               onChange={e => handlePeriodValueChange(e.target.value)}
-              className="w-full h-8 rounded-md border border-gray-200 px-2.5 text-[12px] bg-white focus:outline-none focus:ring-2 focus:ring-orange-400"
-              aria-label="Select quarter"
-            >
-              <option value="">Select quarter…</option>
-              {quarterOptions().map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+              placeholder="e.g. Fall 2025, Spring Semester 2026"
+              className="h-8 text-[13px]"
+              aria-label="Quarter label"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">Use any label — your quarters don&apos;t need to follow the calendar year</p>
           </div>
         )}
 
@@ -261,6 +244,38 @@ export function FormSettingsPanel({ settings, onUpdate }: Props) {
           />
           <p className="text-[11px] text-gray-400 mt-1">One email address per line</p>
         </div>
+      </Section>
+
+      <Section title="Reminders">
+        <div>
+          <Label htmlFor="reminder-interval">Send reminders every N days</Label>
+          <Input
+            id="reminder-interval"
+            type="number"
+            min={1}
+            max={30}
+            value={settings.reminderIntervalDays ?? ''}
+            onChange={e => onUpdate({ reminderIntervalDays: e.target.value ? Number(e.target.value) : undefined })}
+            placeholder="e.g. 3"
+            className="h-8 text-[13px]"
+            aria-label="Send reminders every N days"
+          />
+        </div>
+        <div>
+          <Label htmlFor="reminder-max">Up to N times</Label>
+          <Input
+            id="reminder-max"
+            type="number"
+            min={1}
+            max={10}
+            value={settings.reminderMaxCount ?? ''}
+            onChange={e => onUpdate({ reminderMaxCount: e.target.value ? Number(e.target.value) : undefined })}
+            placeholder="e.g. 2"
+            className="h-8 text-[13px]"
+            aria-label="Send reminders up to N times"
+          />
+        </div>
+        <p className="text-[11px] text-gray-400">Auto-reminders are sent daily to respondents who haven&apos;t completed the form</p>
       </Section>
 
       <Section title="Advanced">

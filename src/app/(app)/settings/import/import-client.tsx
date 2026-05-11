@@ -90,18 +90,28 @@ function MappingEditor({ job, onSave, saving }: MappingEditorProps) {
           <option value="month">Month</option>
           <option value="quarter">Quarter</option>
         </select>
-        {periodType && (
+        {periodType === 'month' && (
           <select
             value={periodValue}
             onChange={e => setPeriodValue(e.target.value)}
             className="h-7 rounded-md border border-gray-200 px-2 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
-            aria-label="Period value"
+            aria-label="Month"
           >
-            <option value="">Select period…</option>
-            {periodOptions(periodType).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            <option value="">Select month…</option>
+            {periodOptions('month').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         )}
-        {periodValue && <span className="text-[11px] text-orange-600 font-medium">A form will be created for this period</span>}
+        {periodType === 'quarter' && (
+          <input
+            type="text"
+            value={periodValue}
+            onChange={e => setPeriodValue(e.target.value)}
+            placeholder="e.g. Fall 2025"
+            className="h-7 rounded-md border border-gray-200 px-2 text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400 w-36"
+            aria-label="Quarter label"
+          />
+        )}
+        {periodValue && <span className="text-[11px] text-orange-600 font-medium">A form will be created for <strong>{periodValue}</strong></span>}
       </div>
 
       <div className="overflow-x-auto">
@@ -287,21 +297,31 @@ export function ImportClient() {
             <option value="month">Month / Year</option>
             <option value="quarter">Quarter / Year</option>
           </select>
-          {periodType && (
+          {periodType === 'month' && (
             <select
               value={periodValue}
               onChange={e => setPeriodValue(e.target.value)}
               className="h-8 rounded-md border border-gray-200 px-2.5 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400"
-              aria-label="Period value"
+              aria-label="Month"
             >
               <option value="">Select…</option>
-              {periodOptions(periodType).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {periodOptions('month').map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+          )}
+          {periodType === 'quarter' && (
+            <input
+              type="text"
+              value={periodValue}
+              onChange={e => setPeriodValue(e.target.value)}
+              placeholder="e.g. Fall 2025"
+              className="h-8 rounded-md border border-gray-200 px-2.5 text-[12px] bg-white focus:outline-none focus:ring-1 focus:ring-orange-400 w-40"
+              aria-label="Quarter label"
+            />
           )}
         </div>
         {periodValue && (
           <p className="w-full text-[11px] text-orange-600 font-medium pt-0 -mt-1">
-            A form will be created for <strong>{periodOptions(periodType as 'month' | 'quarter').find(o => o.value === periodValue)?.label}</strong> when you confirm mappings.
+            A form will be created for <strong>{periodValue}</strong> when you confirm mappings.
           </p>
         )}
       </div>

@@ -115,6 +115,9 @@ export interface FormSettings {
   periodValue?: string          // 'YYYY-MM' for month, 'YYYY-Q1' for quarter
   // Folder grouping on the forms list
   folder?: string
+  // Auto-reminder configuration
+  reminderIntervalDays?: number   // days between auto-reminders
+  reminderMaxCount?: number       // max auto-reminders to send per token
 }
 
 // Report content types

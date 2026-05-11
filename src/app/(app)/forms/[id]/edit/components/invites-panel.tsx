@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import { Mail, RefreshCw, Trash2, CheckCircle2, Clock, Link2, Copy, Code } from 'lucide-react'
+import { Mail, RefreshCw, Trash2, CheckCircle2, Clock, Link2, Copy, Code, BellRing } from 'lucide-react'
 import { format, formatDistanceToNow, isPast } from 'date-fns'
 import { cn } from '@/lib/utils'
 import type { Database } from '@/types/database'
@@ -22,6 +22,7 @@ export function InvitesPanel({ formId, formSlug }: Props) {
   const [tokens, setTokens] = useState<Token[]>([])
   const [loading, setLoading] = useState(true)
   const [actioning, setActioning] = useState<string | null>(null)
+  const [remindingAll, setRemindingAll] = useState(false)
 
   const fetchTokens = useCallback(async () => {
     setLoading(true)
@@ -59,6 +60,22 @@ export function InvitesPanel({ formId, formSlug }: Props) {
       toast.error('Failed to resend')
     }
     setActioning(null)
+  }
+
+  async function remindAllPending() {
+    setRemindingAll(true)
+    let count = 0
+    for (const tok of pending) {
+      const res = await fetch(`/api/tokens/${tok.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resend' }),
+      })
+      if (res.ok) count++
+    }
+    await fetchTokens()
+    setRemindingAll(false)
+    toast.success(`Reminders sent to ${count} respondent${count !== 1 ? 's' : ''}`)
   }
 
   function copyLink(token: string) {
@@ -117,14 +134,29 @@ export function InvitesPanel({ formId, formSlug }: Props) {
           <span className="flex items-center gap-1"><Clock className="h-3 w-3 text-amber-500" aria-hidden="true" />{pending.length} pending</span>
           <span className="text-gray-300">{expired.length} expired</span>
         </div>
-        <button
-          onClick={fetchTokens}
-          className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded"
-          aria-label="Refresh invitations"
-          disabled={loading}
-        >
-          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden="true" />
-        </button>
+        <div className="flex items-center gap-2">
+          {pending.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={remindAllPending}
+              disabled={remindingAll}
+              aria-busy={remindingAll}
+              className="h-7 text-[11px] text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-1"
+            >
+              <BellRing className="h-3 w-3" aria-hidden="true" />
+              {remindingAll ? 'Sending…' : 'Remind all pending'}
+            </Button>
+          )}
+          <button
+            onClick={fetchTokens}
+            className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded"
+            aria-label="Refresh invitations"
+            disabled={loading}
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -140,7 +172,11 @@ export function InvitesPanel({ formId, formSlug }: Props) {
           {tokens.map(tok => {
             const isUsed = !!tok.used_at
             const isExpired = !isUsed && isPast(new Date(tok.expires_at))
+            const isPending = !isUsed && !isExpired
             const isBusy = actioning === tok.id
+            const meta = (tok.metadata ?? {}) as Record<string, unknown>
+            const reminderCount = typeof meta.reminderCount === 'number' ? meta.reminderCount : 0
+
             return (
               <div
                 key={tok.id}
@@ -160,6 +196,9 @@ export function InvitesPanel({ formId, formSlug }: Props) {
                         : `Sent ${tok.sent_at ? formatDistanceToNow(new Date(tok.sent_at), { addSuffix: true }) : 'not yet'} · expires ${format(new Date(tok.expires_at), 'MMM d')}`
                     }
                   </p>
+                  {isPending && reminderCount > 0 && (
+                    <p className="text-[10px] text-gray-400 mt-0.5">{reminderCount} reminder{reminderCount !== 1 ? 's' : ''} sent</p>
+                  )}
                 </div>
                 {isUsed ? (
                   <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" aria-label="Completed" />

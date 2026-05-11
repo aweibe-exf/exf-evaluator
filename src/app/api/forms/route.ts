@@ -8,7 +8,7 @@ import type { Json } from '@/types/database'
 const createFormSchema = z.object({
   program_id: z.string().min(1),
   name: z.string().min(1).max(200),
-  description: z.string().max(1000).optional(),
+  description: z.string().max(1000).nullish().transform(v => v ?? undefined),
   template_id: z.string().min(1).optional(),
   schema: z.object({
     pages: z.array(z.object({

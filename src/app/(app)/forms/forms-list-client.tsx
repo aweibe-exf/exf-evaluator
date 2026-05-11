@@ -32,9 +32,12 @@ import {
   Folder,
   FolderOpen,
   FolderInput,
+  FolderPlus,
   ChevronDown,
   ChevronRight,
   Calendar,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -44,6 +47,7 @@ import type { FormSettings } from '@/types/forms'
 
 type Form = Database['public']['Tables']['forms']['Row']
 type StatusFilter = 'all' | 'draft' | 'active' | 'closed'
+type SortMode = 'updated' | 'az'
 
 const statusConfig = {
   active:  { label: 'Active',  className: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
@@ -64,8 +68,7 @@ function formatPeriod(s: FormSettings): string | null {
     return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   }
   if (periodType === 'quarter') {
-    const [year, q] = periodValue.split('-')
-    return `${q} ${year}`
+    return periodValue
   }
   return periodValue
 }
@@ -77,7 +80,10 @@ export function FormsListClient() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [sortMode, setSortMode] = useState<SortMode>('updated')
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
+  const [emptyFolders, setEmptyFolders] = useState<string[]>([])
+  const [stats, setStats] = useState<Record<string, { completed: number; pending: number }>>({})
 
   // Create dialog
   const [creating, setCreating] = useState(false)
@@ -85,10 +91,18 @@ export function FormsListClient() {
   const [newDesc, setNewDesc] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // Create folder dialog
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+
   // Move to folder dialog
   const [movingForm, setMovingForm] = useState<Form | null>(null)
   const [folderInput, setFolderInput] = useState('')
   const [movingTo, setMovingTo] = useState(false)
+
+  // Delete folder confirm
+  const [deletingFolder, setDeletingFolder] = useState<string | null>(null)
+  const [deletingFolderBusy, setDeletingFolderBusy] = useState(false)
 
   const canEdit = currentRole && ['super_admin', 'program_admin', 'staff'].includes(currentRole)
 
@@ -100,7 +114,19 @@ export function FormsListClient() {
     setLoading(false)
   }, [currentProgram])
 
-  useEffect(() => { fetchForms() }, [fetchForms])
+  const fetchStats = useCallback(async () => {
+    if (!currentProgram) return
+    const res = await fetch(`/api/forms/stats?program_id=${currentProgram.id}`)
+    if (res.ok) setStats(await res.json())
+  }, [currentProgram])
+
+  useEffect(() => {
+    fetchForms()
+  }, [fetchForms])
+
+  useEffect(() => {
+    fetchStats()
+  }, [fetchStats])
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -126,7 +152,7 @@ export function FormsListClient() {
     const res = await fetch('/api/forms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: `${form.name} (copy)`, description: form.description, program_id: currentProgram.id, schema: form.schema }),
+      body: JSON.stringify({ name: `${form.name} (copy)`, description: form.description ?? undefined, program_id: currentProgram.id, schema: form.schema }),
     })
     if (res.ok) { toast.success('Form duplicated'); fetchForms() }
     else toast.error('Failed to duplicate form')
@@ -187,23 +213,64 @@ export function FormsListClient() {
     })
   }
 
+  function handleCreateFolder() {
+    const name = newFolderName.trim()
+    if (!name) return
+    if (!emptyFolders.includes(name) && !forms.some(f => formSettings(f).folder === name)) {
+      setEmptyFolders(prev => [...prev, name])
+    }
+    setCreatingFolder(false)
+    setNewFolderName('')
+  }
+
+  async function handleDeleteFolder(folderName: string) {
+    const formsInFolder = forms.filter(f => formSettings(f).folder === folderName)
+    setDeletingFolderBusy(true)
+    try {
+      for (const form of formsInFolder) {
+        const existing = formSettings(form)
+        const merged: FormSettings = { ...existing }
+        delete merged.folder
+        await fetch(`/api/forms/${form.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings: merged }),
+        })
+      }
+      setEmptyFolders(prev => prev.filter(f => f !== folderName))
+      toast.success(`Folder "${folderName}" deleted, forms moved to Unfiled`)
+      await fetchForms()
+    } catch {
+      toast.error('Failed to delete folder')
+    }
+    setDeletingFolderBusy(false)
+    setDeletingFolder(null)
+  }
+
   const filtered = forms.filter(f => {
     const matchesSearch = f.name.toLowerCase().includes(search.toLowerCase())
     const matchesStatus = statusFilter === 'all' || f.status === statusFilter
     return matchesSearch && matchesStatus
   })
 
-  // Derive folder list and group forms
-  const allFolders = [...new Set(
-    forms.map(f => formSettings(f).folder).filter(Boolean) as string[]
-  )].sort()
+  function sortForms(items: Form[]): Form[] {
+    if (sortMode === 'az') {
+      return [...items].sort((a, b) => a.name.localeCompare(b.name))
+    }
+    // updated (desc)
+    return [...items].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+  }
+
+  // Derive folder list: union of form folders + emptyFolders, sorted A-Z
+  const formFolders = [...new Set(forms.map(f => formSettings(f).folder).filter(Boolean) as string[])]
+  const allFolders = [...new Set([...formFolders, ...emptyFolders])].sort()
 
   const grouped: { folder: string | null; items: Form[] }[] = [
     ...allFolders.map(folder => ({
       folder,
-      items: filtered.filter(f => formSettings(f).folder === folder),
-    })).filter(g => g.items.length > 0),
-    { folder: null, items: filtered.filter(f => !formSettings(f).folder) },
+      items: sortForms(filtered.filter(f => formSettings(f).folder === folder)),
+    })),
+    { folder: null, items: sortForms(filtered.filter(f => !formSettings(f).folder)) },
   ]
 
   const filterButtons: { key: StatusFilter; label: string }[] = [
@@ -225,15 +292,27 @@ export function FormsListClient() {
             {forms.length} form{forms.length !== 1 ? 's' : ''} in {currentProgram?.name}
           </p>
         </div>
-        {canEdit && (
-          <Button onClick={() => setCreating(true)} className="bg-orange-600 hover:bg-orange-700 h-9 gap-1.5 text-[13px]">
-            <Plus className="h-4 w-4" aria-hidden="true" /> New form
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Button
+              variant="ghost"
+              onClick={() => setCreatingFolder(true)}
+              className="h-9 gap-1.5 text-[13px] text-gray-600 hover:text-gray-900"
+              aria-label="Create folder"
+            >
+              <FolderPlus className="h-4 w-4" aria-hidden="true" /> New folder
+            </Button>
+          )}
+          {canEdit && (
+            <Button onClick={() => setCreating(true)} className="bg-orange-600 hover:bg-orange-700 h-9 gap-1.5 text-[13px]">
+              <Plus className="h-4 w-4" aria-hidden="true" /> New form
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
           <Input
@@ -259,12 +338,34 @@ export function FormsListClient() {
             </button>
           ))}
         </div>
+        <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1" role="group" aria-label="Sort order">
+          <button
+            onClick={() => setSortMode('updated')}
+            className={cn(
+              'rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+              sortMode === 'updated' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900'
+            )}
+            aria-pressed={sortMode === 'updated'}
+          >
+            Updated
+          </button>
+          <button
+            onClick={() => setSortMode('az')}
+            className={cn(
+              'rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+              sortMode === 'az' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900'
+            )}
+            aria-pressed={sortMode === 'az'}
+          >
+            A→Z
+          </button>
+        </div>
       </div>
 
       {/* Forms list */}
       {loading ? (
         <div className="space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}</div>
-      ) : filtered.length === 0 ? (
+      ) : filtered.length === 0 && emptyFolders.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white py-20 text-center">
           <FileText className="mx-auto h-8 w-8 text-gray-200 mb-3" aria-hidden="true" />
           <p className="text-[14px] font-medium text-gray-500">
@@ -279,49 +380,62 @@ export function FormsListClient() {
       ) : (
         <div className="space-y-4">
           {grouped.map(({ folder, items }) => {
-            if (items.length === 0) return null
+            if (items.length === 0 && folder && !emptyFolders.includes(folder)) return null
             const isCollapsed = folder ? collapsedFolders.has(folder) : false
             const FolderIcon = isCollapsed ? Folder : FolderOpen
 
             return (
               <div key={folder ?? '__unfiled__'}>
-                {/* Folder header — only shown when there are actual folders */}
+                {/* Folder header */}
                 {(hasAnyFolders || folder) && (
-                  <button
-                    onClick={() => folder && toggleFolder(folder)}
-                    className={cn(
-                      'flex items-center gap-2 w-full text-left mb-1.5 group/folder',
-                      folder ? 'cursor-pointer' : 'cursor-default'
+                  <div className="flex items-center gap-1 mb-1.5 group/folder">
+                    <button
+                      onClick={() => folder && toggleFolder(folder)}
+                      className={cn(
+                        'flex items-center gap-2 flex-1 text-left',
+                        folder ? 'cursor-pointer' : 'cursor-default'
+                      )}
+                      disabled={!folder}
+                      aria-expanded={folder ? !isCollapsed : undefined}
+                    >
+                      {folder ? (
+                        <>
+                          {isCollapsed
+                            ? <ChevronRight className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
+                            : <ChevronDown className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
+                          }
+                          <FolderIcon className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
+                          <span className="text-[12px] font-semibold text-gray-600 group-hover/folder:text-gray-900">{folder}</span>
+                          <span className="text-[11px] text-gray-400">{items.length}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-[12px] font-semibold text-gray-400 pl-5">Unfiled</span>
+                          <span className="text-[11px] text-gray-300">{items.length}</span>
+                        </>
+                      )}
+                    </button>
+                    {canEdit && folder && (
+                      <button
+                        onClick={() => setDeletingFolder(folder)}
+                        className="p-1 rounded text-gray-300 hover:text-red-500 opacity-0 group-hover/folder:opacity-100 focus-visible:opacity-100 transition-opacity focus:outline-none focus-visible:ring-1 focus-visible:ring-red-400"
+                        aria-label={`Delete folder ${folder}`}
+                      >
+                        <Trash2 className="h-3 w-3" aria-hidden="true" />
+                      </button>
                     )}
-                    disabled={!folder}
-                    aria-expanded={folder ? !isCollapsed : undefined}
-                  >
-                    {folder ? (
-                      <>
-                        {isCollapsed
-                          ? <ChevronRight className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
-                          : <ChevronDown className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
-                        }
-                        <FolderIcon className="h-3.5 w-3.5 text-amber-500" aria-hidden="true" />
-                        <span className="text-[12px] font-semibold text-gray-600 group-hover/folder:text-gray-900">{folder}</span>
-                        <span className="text-[11px] text-gray-400">{items.length}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-[12px] font-semibold text-gray-400 pl-5">Unfiled</span>
-                        <span className="text-[11px] text-gray-300">{items.length}</span>
-                      </>
-                    )}
-                  </button>
+                  </div>
                 )}
 
                 {/* Forms in this group */}
-                {!isCollapsed && (
+                {!isCollapsed && items.length > 0 && (
                   <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden" role="list" aria-label={folder ?? 'Unfiled forms'}>
                     {items.map((form, i) => {
                       const cfg = statusConfig[form.status]
                       const s = formSettings(form)
                       const period = formatPeriod(s)
+                      const formStats = stats[form.id]
+                      const hasTokens = formStats && (formStats.completed + formStats.pending > 0)
 
                       return (
                         <div
@@ -336,7 +450,7 @@ export function FormsListClient() {
                             <FileText className="h-3.5 w-3.5 text-gray-400" aria-hidden="true" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <button
                                 onClick={() => router.push(`/forms/${form.id}/edit`)}
                                 className="text-[14px] font-medium text-gray-800 hover:text-orange-600 transition-colors truncate text-left focus:outline-none focus-visible:underline"
@@ -348,6 +462,14 @@ export function FormsListClient() {
                                 <span className="flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600 flex-shrink-0">
                                   <Calendar className="h-2.5 w-2.5" aria-hidden="true" />
                                   {period}
+                                </span>
+                              )}
+                              {hasTokens && (
+                                <span className="flex items-center gap-1.5 rounded-full bg-gray-50 border border-gray-100 px-2 py-0.5 flex-shrink-0">
+                                  <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" aria-hidden="true" />
+                                  <span className="text-[10px] font-medium text-emerald-600">{formStats.completed}</span>
+                                  <Clock className="h-2.5 w-2.5 text-amber-500" aria-hidden="true" />
+                                  <span className="text-[10px] font-medium text-amber-600">{formStats.pending}</span>
                                 </span>
                               )}
                             </div>
@@ -457,6 +579,38 @@ export function FormsListClient() {
         </DialogContent>
       </Dialog>
 
+      {/* Create folder dialog */}
+      <Dialog open={creatingFolder} onOpenChange={o => { setCreatingFolder(o); if (!o) setNewFolderName('') }}>
+        <DialogContent className="sm:max-w-sm" aria-describedby="create-folder-desc">
+          <DialogHeader>
+            <DialogTitle>New folder</DialogTitle>
+            <p id="create-folder-desc" className="text-[13px] text-muted-foreground mt-1">
+              Create a folder to organize your forms.
+            </p>
+          </DialogHeader>
+          <div className="py-2">
+            <label htmlFor="new-folder-name" className="text-[13px] font-medium text-gray-700 block mb-1.5">
+              Folder name
+            </label>
+            <Input
+              id="new-folder-name"
+              placeholder="e.g. Q1 2025 surveys"
+              value={newFolderName}
+              onChange={e => setNewFolderName(e.target.value)}
+              autoFocus
+              className="h-9 text-[13px]"
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCreateFolder() } }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setCreatingFolder(false); setNewFolderName('') }}>Cancel</Button>
+            <Button onClick={handleCreateFolder} className="bg-orange-600 hover:bg-orange-700" disabled={!newFolderName.trim()}>
+              Create folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Move to folder dialog */}
       <Dialog open={!!movingForm} onOpenChange={o => { if (!o) { setMovingForm(null); setFolderInput('') } }}>
         <DialogContent className="sm:max-w-sm" aria-describedby="move-folder-desc">
@@ -467,7 +621,6 @@ export function FormsListClient() {
             </p>
           </DialogHeader>
           <div className="py-2 space-y-3">
-            {/* Existing folders */}
             {allFolders.length > 0 && (
               <div className="space-y-1">
                 {allFolders.map(f => (
@@ -495,7 +648,6 @@ export function FormsListClient() {
                 </button>
               </div>
             )}
-            {/* New folder input */}
             <div className="space-y-1.5">
               <label htmlFor="folder-name" className="text-[12px] font-medium text-gray-500">
                 {allFolders.length > 0 ? 'Or create a new folder' : 'Folder name'}
@@ -514,6 +666,29 @@ export function FormsListClient() {
             <Button variant="ghost" onClick={() => { setMovingForm(null); setFolderInput('') }} disabled={movingTo}>Cancel</Button>
             <Button onClick={handleMoveToFolder} className="bg-orange-600 hover:bg-orange-700" disabled={movingTo} aria-busy={movingTo}>
               {movingTo ? 'Moving…' : folderInput.trim() ? `Move to "${folderInput.trim()}"` : 'Remove from folder'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete folder confirm dialog */}
+      <Dialog open={!!deletingFolder} onOpenChange={o => { if (!o) setDeletingFolder(null) }}>
+        <DialogContent className="sm:max-w-sm" aria-describedby="delete-folder-desc">
+          <DialogHeader>
+            <DialogTitle>Delete folder &quot;{deletingFolder}&quot;?</DialogTitle>
+            <p id="delete-folder-desc" className="text-[13px] text-muted-foreground mt-1">
+              The {forms.filter(f => formSettings(f).folder === deletingFolder).length} form(s) inside will be moved to Unfiled. This cannot be undone.
+            </p>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeletingFolder(null)} disabled={deletingFolderBusy}>Cancel</Button>
+            <Button
+              onClick={() => deletingFolder && handleDeleteFolder(deletingFolder)}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={deletingFolderBusy}
+              aria-busy={deletingFolderBusy}
+            >
+              {deletingFolderBusy ? 'Deleting…' : 'Delete folder'}
             </Button>
           </DialogFooter>
         </DialogContent>

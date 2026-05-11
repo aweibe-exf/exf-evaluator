@@ -46,7 +46,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       formSlug: form?.slug ?? '',
       expiresAt: token.expires_at,
     })
-    await service.from('submission_tokens').update({ sent_at: new Date().toISOString() }).eq('id', id)
+
+    const now = new Date().toISOString()
+    const existingMeta = (token.metadata ?? {}) as Record<string, unknown>
+    const reminderCount = typeof existingMeta.reminderCount === 'number' ? existingMeta.reminderCount : 0
+    const updatedMeta = {
+      ...existingMeta,
+      reminderCount: reminderCount + 1,
+      lastReminderAt: now,
+    }
+
+    await service.from('submission_tokens').update({
+      sent_at: now,
+      metadata: updatedMeta as import('@/types/database').Json,
+    }).eq('id', id)
+
     return NextResponse.json({ sent: true })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 })
