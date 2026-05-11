@@ -11,6 +11,9 @@ const schema = z.object({
   date_from: z.string().min(1),
   date_to: z.string().min(1),
   summary_type: z.enum(['key_themes', 'trend', 'impact_story', 'logic_model']),
+  // 'form_period': skip submitted_at filter — use form period settings to scope data
+  // 'submitted_at': default — filter by when submissions were actually submitted
+  date_mode: z.enum(['submitted_at', 'form_period']).default('submitted_at'),
 })
 
 const client = new Anthropic()
@@ -88,7 +91,7 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
 
-  const { program_id, form_id, form_ids, date_from, date_to, summary_type } = parsed.data
+  const { program_id, form_id, form_ids, date_from, date_to, summary_type, date_mode } = parsed.data
 
   // Fetch program name
   const { data: program } = await supabase.from('programs').select('name').eq('id', program_id).single()
@@ -103,33 +106,59 @@ export async function POST(request: Request) {
     effectiveFormIds = [form_id]
   }
 
-  // Fetch submissions in date range
-  let subQuery = supabase
-    .from('submissions')
-    .select('data, submitted_at, forms(name, schema)')
-    .eq('status', 'submitted')
-    .gte('submitted_at', date_from)
-    .lte('submitted_at', date_to + 'T23:59:59Z')
-
-  if (effectiveFormIds) {
-    subQuery = subQuery.in('form_id', effectiveFormIds)
-  } else {
-    // Fall back to all forms in the program
+  // If no explicit form IDs, fall back to all forms in the program
+  if (!effectiveFormIds) {
     const { data: programForms } = await supabase.from('forms').select('id').eq('program_id', program_id)
     const programFormIds = programForms?.map(f => f.id) ?? []
     if (programFormIds.length === 0) return NextResponse.json({ error: 'No forms found for this program' }, { status: 404 })
-    subQuery = subQuery.in('form_id', programFormIds)
+    effectiveFormIds = programFormIds
   }
 
-  const { data: submissions, error: subErr } = await subQuery
+  // Fetch all submitted submissions for the resolved form IDs.
+  // We intentionally omit a DB-side submitted_at filter here and do the date
+  // matching in JS so we can also catch imported submissions whose submitted_at
+  // was set to the period end date rather than "today".
+  const { data: rawSubmissions, error: subErr } = await supabase
+    .from('submissions')
+    .select('data, submitted_at, forms(name, schema, settings)')
+    .eq('status', 'submitted')
+    .in('form_id', effectiveFormIds)
+
   if (subErr) return NextResponse.json({ error: subErr.message }, { status: 500 })
-  if (!submissions?.length) return NextResponse.json({ error: 'No submissions found in this date range' }, { status: 404 })
+
+  // Filter submissions to only those within the requested date window.
+  // In 'form_period' mode the client already scoped form_ids to the right period,
+  // so we include all submissions from those forms regardless of submitted_at.
+  // In 'submitted_at' mode we filter by submitted_at OR by the form's assigned
+  // period dates — the latter catches existing imported data whose submitted_at
+  // was recorded as today rather than during the actual reporting period.
+  const from = new Date(date_from)
+  const to = new Date(date_to + 'T23:59:59Z')
+
+  const submissions_final = (rawSubmissions ?? []).filter(s => {
+    if (date_mode === 'form_period') return true
+
+    // Check submitted_at falls in range
+    const submittedAt = s.submitted_at ? new Date(s.submitted_at) : null
+    if (submittedAt && submittedAt >= from && submittedAt <= to) return true
+
+    // Also include if the form's assigned period overlaps the requested range
+    const settings = (s.forms as { settings?: Record<string, unknown> } | null)?.settings ?? {}
+    const pStart = settings.periodStart as string | undefined
+    const pEnd = settings.periodEnd as string | undefined
+    if (pStart && pEnd) {
+      return new Date(pStart) <= to && new Date(pEnd) >= from
+    }
+    return false
+  })
+
+  if (!submissions_final.length) return NextResponse.json({ error: 'No submissions found in this date range' }, { status: 404 })
 
   // Aggregate fields from all returned forms (for multi-form analysis)
   const seenSchemas = new Set<string>()
   const fields: FormField[] = []
   const formNames: string[] = []
-  submissions.forEach(s => {
+  submissions_final.forEach(s => {
     const f = s.forms as { name: string; schema: unknown } | null
     if (!f) return
     if (!seenSchemas.has(f.name)) {
@@ -156,7 +185,7 @@ export async function POST(request: Request) {
     formName,
     date_from,
     date_to,
-    submissions as Record<string, unknown>[],
+    submissions_final as Record<string, unknown>[],
     fields,
     narratives ?? []
   )

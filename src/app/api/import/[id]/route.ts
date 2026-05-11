@@ -99,7 +99,15 @@ async function createFormFromImport(
   // Create a submission for every data row in preview_data
   const allRows = (job.preview_data ?? []) as Record<string, string>[]
   if (allRows.length > 0) {
-    const submittedAt = new Date().toISOString()
+    // Use the period end date as submitted_at so these submissions fall within
+    // the correct date range when the report AI filters by submitted_at.
+    // Fall back to period start, then today if no period is set.
+    const periodSubmittedAt = periodEnd
+      ? new Date(periodEnd).toISOString()
+      : periodStart
+        ? new Date(periodStart).toISOString()
+        : new Date().toISOString()
+    const submittedAt = periodSubmittedAt
     const submissions = allRows.map(row => {
       // Build data object: { fieldId: value } mapping
       const data: Record<string, unknown> = {}

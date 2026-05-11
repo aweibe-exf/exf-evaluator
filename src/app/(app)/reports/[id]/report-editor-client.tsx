@@ -223,6 +223,10 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
           date_from: dateFrom,
           date_to: dateTo,
           summary_type: summaryType,
+          // In period mode, submissions were imported with submitted_at set to the
+          // period end date (or today for older imports). Tell the API to match by
+          // the form's assigned period rather than submitted_at timestamp.
+          date_mode: dateMode === 'period' ? 'form_period' : 'submitted_at',
         }),
       })
       if (res.ok) {
