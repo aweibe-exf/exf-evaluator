@@ -8,11 +8,11 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+
 import {
   BookOpen,
   Search,
   MoreHorizontal,
-  Plus,
   Trash2,
   Globe,
   FolderPlus,
@@ -21,6 +21,7 @@ import {
   FolderOpen,
   ChevronDown,
   ChevronRight,
+  ArrowRight,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { toast } from 'sonner'
@@ -43,10 +44,6 @@ export function TemplateLibraryClient() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [sortMode, setSortMode] = useState<SortMode>('updated')
-  const [creating, setCreating] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newDesc, setNewDesc] = useState('')
-  const [submitting, setSubmitting] = useState(false)
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set())
   const [emptyFolders, setEmptyFolders] = useState<string[]>([])
 
@@ -106,32 +103,6 @@ export function TemplateLibraryClient() {
     } else {
       toast.error('Failed to archive template')
     }
-  }
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault()
-    if (!currentProgram) return
-    setSubmitting(true)
-    const res = await fetch('/api/templates', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: newName.trim(),
-        description: newDesc.trim() || undefined,
-        program_id: currentProgram.id,
-        schema: { pages: [{ id: 'page-1', title: 'Page 1', fields: [] }] },
-      }),
-    })
-    if (res.ok) {
-      toast.success('Template created')
-      setCreating(false)
-      setNewName('')
-      setNewDesc('')
-      fetchTemplates()
-    } else {
-      toast.error('Failed to create template')
-    }
-    setSubmitting(false)
   }
 
   async function handleMoveToFolder() {
@@ -242,7 +213,7 @@ export function TemplateLibraryClient() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight text-gray-900">Templates</h1>
-          <p className="mt-0.5 text-[14px] text-gray-500">Reusable form shells — creating from a template makes an independent copy</p>
+          <p className="mt-0.5 text-[14px] text-gray-500">Saved templates appear here — use them to create new forms in seconds</p>
         </div>
         <div className="flex items-center gap-2">
           {isAdmin && (
@@ -253,11 +224,6 @@ export function TemplateLibraryClient() {
               aria-label="Create folder"
             >
               <FolderPlus className="h-4 w-4" aria-hidden="true" /> New folder
-            </Button>
-          )}
-          {isAdmin && (
-            <Button onClick={() => setCreating(true)} className="bg-orange-600 hover:bg-orange-700 h-9 gap-1.5 text-[13px]">
-              <Plus className="h-4 w-4" aria-hidden="true" /> New template
             </Button>
           )}
         </div>
@@ -303,12 +269,43 @@ export function TemplateLibraryClient() {
           {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
         </div>
       ) : filtered.length === 0 && emptyFolders.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-white py-20 text-center">
-          <BookOpen className="mx-auto h-8 w-8 text-gray-200 mb-3" aria-hidden="true" />
-          <p className="text-[14px] font-medium text-gray-500">
-            {search ? 'No templates match your search' : 'No templates yet'}
-          </p>
-        </div>
+        search ? (
+          <div className="rounded-xl border border-dashed border-gray-200 bg-white py-20 text-center">
+            <BookOpen className="mx-auto h-8 w-8 text-gray-200 mb-3" aria-hidden="true" />
+            <p className="text-[14px] font-medium text-gray-500">No templates match your search</p>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-gray-100 bg-white p-10">
+            <div className="max-w-md mx-auto">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-50 mb-4">
+                <BookOpen className="h-6 w-6 text-orange-400" aria-hidden="true" />
+              </div>
+              <h2 className="text-[16px] font-semibold text-gray-800 mb-2">No templates yet</h2>
+              <p className="text-[14px] text-gray-500 leading-relaxed mb-6">
+                Templates are created from your existing forms. Build a form the way you like it, then save it as a template — it will appear here and can be reused for future forms.
+              </p>
+              <ol className="space-y-3">
+                {[
+                  { step: '1', text: 'Go to Forms and open any form in the editor' },
+                  { step: '2', text: 'Click the "⋯" menu in the top toolbar and choose "Save as template"' },
+                  { step: '3', text: 'Give it a name and it will appear here, ready to use' },
+                ].map(({ step, text }) => (
+                  <li key={step} className="flex items-start gap-3">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-[11px] font-bold text-orange-600 mt-0.5">{step}</span>
+                    <span className="text-[13px] text-gray-600">{text}</span>
+                  </li>
+                ))}
+              </ol>
+              <Button
+                variant="ghost"
+                className="mt-6 gap-1.5 text-[13px] text-orange-600 hover:text-orange-700 hover:bg-orange-50 px-0"
+                onClick={() => router.push('/forms')}
+              >
+                Go to Forms <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        )
       ) : (
         <div className="space-y-6">
           {grouped.map(({ folder, items }) => {
@@ -428,56 +425,6 @@ export function TemplateLibraryClient() {
           })}
         </div>
       )}
-
-      {/* Create template dialog */}
-      <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent className="sm:max-w-md" aria-describedby="new-template-desc">
-          <DialogHeader>
-            <DialogTitle>New template</DialogTitle>
-            <p id="new-template-desc" className="text-[13px] text-muted-foreground mt-1">
-              Create a blank template. You can add fields after creating it.
-            </p>
-          </DialogHeader>
-          <form onSubmit={handleCreate} id="create-template-form">
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <label htmlFor="tpl-name" className="text-[13px] font-medium text-gray-700">
-                  Template name <span aria-hidden="true" className="text-red-500">*</span>
-                  <span className="sr-only">(required)</span>
-                </label>
-                <Input
-                  id="tpl-name"
-                  value={newName}
-                  onChange={e => setNewName(e.target.value)}
-                  placeholder="e.g. Post-session feedback"
-                  required
-                  autoFocus
-                  className="h-9 text-[13px]"
-                  aria-required="true"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label htmlFor="tpl-desc" className="text-[13px] font-medium text-gray-700">
-                  Description <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <Input
-                  id="tpl-desc"
-                  value={newDesc}
-                  onChange={e => setNewDesc(e.target.value)}
-                  placeholder="What is this template for?"
-                  className="h-9 text-[13px]"
-                />
-              </div>
-            </div>
-          </form>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCreating(false)} disabled={submitting}>Cancel</Button>
-            <Button type="submit" form="create-template-form" className="bg-orange-600 hover:bg-orange-700" disabled={submitting || !newName.trim()} aria-busy={submitting}>
-              {submitting ? 'Creating…' : 'Create template'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Create folder dialog */}
       <Dialog open={creatingFolder} onOpenChange={o => { setCreatingFolder(o); if (!o) setNewFolderName('') }}>
