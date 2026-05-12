@@ -16,9 +16,12 @@ import {
   Check,
   FileText,
   Calendar,
-  ChevronDown,
   AlertCircle,
   Loader2,
+  Search,
+  ChevronUp,
+  ChevronDown,
+  Radio,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -77,7 +80,14 @@ function fileSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-// SpeechRecognition type shim (not in all TS libs)
+const SOURCE_LABELS: Record<string, string> = {
+  typed: 'Typed',
+  voice: 'Voice',
+  google_doc: 'Google Doc',
+  attachment: 'Attachment',
+}
+
+// SpeechRecognition type shim
 interface SpeechRecognitionEvent extends Event {
   resultIndex: number
   results: SpeechRecognitionResultList
@@ -103,25 +113,15 @@ function getSpeechRecognition(): (new () => SpeechRecognitionInstance) | null {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// AttachmentChip
 // ---------------------------------------------------------------------------
 
-function AttachmentChip({
-  attachment,
-  onRemove,
-}: {
-  attachment: Attachment
-  onRemove?: () => void
-}) {
+function AttachmentChip({ attachment, onRemove }: { attachment: Attachment; onRemove?: () => void }) {
   return (
     <div className="flex items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs text-zinc-700">
       <FileText className="h-3 w-3 text-zinc-400 flex-shrink-0" />
-      <a
-        href={attachment.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="truncate max-w-[120px] hover:underline"
-      >
+      <a href={attachment.url} target="_blank" rel="noopener noreferrer"
+        className="truncate max-w-[120px] hover:underline">
         {attachment.name}
       </a>
       <span className="text-zinc-400">{fileSize(attachment.size)}</span>
@@ -134,117 +134,128 @@ function AttachmentChip({
   )
 }
 
-function NoteCard({
+// ---------------------------------------------------------------------------
+// Note detail dialog — shown when a row is clicked
+// ---------------------------------------------------------------------------
+
+function NoteDetailDialog({
   note,
   currentUserId,
   isAdmin,
   onEdit,
   onDelete,
+  onClose,
 }: {
   note: PulseNote
   currentUserId: string
   isAdmin: boolean
   onEdit: (note: PulseNote) => void
   onDelete: (id: string) => void
+  onClose: () => void
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const isOwn = note.author_id === currentUserId
   const canEdit = isOwn
   const canDelete = isOwn || isAdmin
 
-  const sourceLabel: Record<string, string> = {
-    typed: 'Typed',
-    voice: 'Voice',
-    google_doc: 'Google Doc',
-    attachment: 'Attachment',
-  }
-
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-      {/* Header row */}
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle className="pr-6">
+          {note.title ?? formatDate(note.note_date)}
+        </DialogTitle>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
           {note.title && (
-            <span className="text-sm font-semibold text-zinc-900">{note.title}</span>
+            <span className="text-xs text-zinc-500">{formatDate(note.note_date)}</span>
           )}
-          <span className={cn('text-xs text-zinc-500', note.title && 'before:content-["·"] before:mr-2')}>{formatDate(note.note_date)}</span>
           <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-600">
-            {sourceLabel[note.source] ?? note.source}
+            {SOURCE_LABELS[note.source] ?? note.source}
           </span>
           <span className="text-[11px] text-zinc-400">
             {isOwn ? 'You' : (note.author_email ?? 'Unknown')}
           </span>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {canEdit && (
-            <button
-              onClick={() => onEdit(note)}
-              className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
-              title="Edit note"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-          )}
-          {canDelete && (
-            confirmDelete ? (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => onDelete(note.id)}
-                  className="rounded px-1.5 py-0.5 text-[11px] font-medium text-red-600 hover:bg-red-50"
-                >
-                  Delete
-                </button>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="rounded px-1.5 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500"
-                title="Delete note"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            )
-          )}
+      </DialogHeader>
+
+      <div className="space-y-4 pt-1">
+        {/* Content */}
+        <p className="whitespace-pre-wrap text-sm text-zinc-800 leading-relaxed max-h-64 overflow-y-auto">
+          {note.content}
+        </p>
+
+        {/* Google Doc link */}
+        {note.google_doc_url && (
+          <a href={note.google_doc_url} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
+            <Link2 className="h-3 w-3" />
+            Source Google Doc
+          </a>
+        )}
+
+        {/* Attachments */}
+        {note.attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {note.attachments.map((a, i) => <AttachmentChip key={i} attachment={a} />)}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex items-center justify-between border-t border-zinc-100 pt-3">
+          <div className="flex gap-1.5">
+            {canEdit && (
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5"
+                onClick={() => { onClose(); onEdit(note) }}>
+                <Pencil className="h-3 w-3" /> Edit
+              </Button>
+            )}
+            {canDelete && (
+              confirmDelete ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-red-600">Delete this note?</span>
+                  <Button variant="destructive" size="sm" className="h-7 text-xs"
+                    onClick={() => { onDelete(note.id); onClose() }}>
+                    Delete
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs"
+                    onClick={() => setConfirmDelete(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="ghost" size="sm"
+                  className="h-7 text-xs text-zinc-400 hover:text-red-500 hover:bg-red-50 gap-1.5"
+                  onClick={() => setConfirmDelete(true)}>
+                  <Trash2 className="h-3 w-3" /> Delete
+                </Button>
+              )
+            )}
+          </div>
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onClose}>
+            Close
+          </Button>
         </div>
       </div>
-
-      {/* Content */}
-      <p className="whitespace-pre-wrap text-sm text-zinc-800 leading-relaxed">{note.content}</p>
-
-      {/* Google Doc link */}
-      {note.google_doc_url && (
-        <a
-          href={note.google_doc_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 flex items-center gap-1 text-xs text-blue-600 hover:underline"
-        >
-          <Link2 className="h-3 w-3" />
-          Source Google Doc
-        </a>
-      )}
-
-      {/* Attachments */}
-      {note.attachments.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {note.attachments.map((a, i) => (
-            <AttachmentChip key={i} attachment={a} />
-          ))}
-        </div>
-      )}
-    </div>
+    </DialogContent>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Sort indicator icon
+// ---------------------------------------------------------------------------
+
+function SortIcon({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
+  if (!active) return <ChevronDown className="h-3 w-3 text-zinc-300" />
+  return dir === 'asc'
+    ? <ChevronUp className="h-3 w-3 text-orange-500" />
+    : <ChevronDown className="h-3 w-3 text-orange-500" />
 }
 
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
+
+type SortField = 'date' | 'author'
+type SortDir = 'asc' | 'desc'
 
 export function PulseClient() {
   const { currentProgram, currentRole } = useProgram()
@@ -254,6 +265,12 @@ export function PulseClient() {
   const [notes, setNotes] = useState<PulseNote[]>([])
   const [loading, setLoading] = useState(true)
   const [currentUserId, setCurrentUserId] = useState('')
+
+  // List controls
+  const [search, setSearch] = useState('')
+  const [sortField, setSortField] = useState<SortField>('date')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [viewNote, setViewNote] = useState<PulseNote | null>(null)
 
   // Compose state
   const [title, setTitle] = useState('')
@@ -269,8 +286,8 @@ export function PulseClient() {
   const [hasSpeech, setHasSpeech] = useState(false)
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
   const interimRef = useRef('')
-  const baseContentRef = useRef('')   // content that existed before recording started
-  const finalTranscriptRef = useRef('') // all finals accumulated during this session
+  const baseContentRef = useRef('')
+  const finalTranscriptRef = useRef('')
 
   // File upload
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -281,7 +298,7 @@ export function PulseClient() {
   const [gdocUrl, setGdocUrl] = useState('')
   const [gdocLoading, setGdocLoading] = useState(false)
   const [gdocError, setGdocError] = useState('')
-  const [gdocSource, setGdocSource] = useState('')  // tracks URL used for this note
+  const [gdocSource, setGdocSource] = useState('')
 
   // Edit dialog
   const [editNote, setEditNote] = useState<PulseNote | null>(null)
@@ -302,7 +319,6 @@ export function PulseClient() {
   }, [])
 
   useEffect(() => {
-    // Get current user id
     import('@/lib/supabase/client').then(({ createClient }) => {
       const supabase = createClient()
       supabase.auth.getUser().then(({ data: { user } }) => {
@@ -315,13 +331,40 @@ export function PulseClient() {
     if (currentProgram) loadNotes(currentProgram.id)
   }, [currentProgram, loadNotes])
 
+  useEffect(() => { setHasSpeech(!!getSpeechRecognition()) }, [])
+
   // ---------------------------------------------------------------------------
-  // Check Speech API support on mount
+  // Sort + filter
   // ---------------------------------------------------------------------------
 
-  useEffect(() => {
-    setHasSpeech(!!getSpeechRecognition())
-  }, [])
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir(field === 'date' ? 'desc' : 'asc')
+    }
+  }
+
+  const filtered = notes
+    .filter(n => {
+      if (!search.trim()) return true
+      const q = search.toLowerCase()
+      return (
+        n.content.toLowerCase().includes(q) ||
+        (n.title ?? '').toLowerCase().includes(q) ||
+        (n.author_email ?? '').toLowerCase().includes(q)
+      )
+    })
+    .sort((a, b) => {
+      let cmp = 0
+      if (sortField === 'date') {
+        cmp = a.note_date.localeCompare(b.note_date)
+      } else {
+        cmp = (a.author_email ?? '').localeCompare(b.author_email ?? '')
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
 
   // ---------------------------------------------------------------------------
   // Voice
@@ -329,12 +372,8 @@ export function PulseClient() {
 
   function startListening() {
     const SpeechRecognition = getSpeechRecognition()
-    if (!SpeechRecognition) {
-      setVoiceError('Your browser does not support voice input.')
-      return
-    }
+    if (!SpeechRecognition) { setVoiceError('Your browser does not support voice input.'); return }
     setVoiceError('')
-    // Snapshot the existing text and reset the running transcript
     baseContentRef.current = content
     finalTranscriptRef.current = ''
     interimRef.current = ''
@@ -345,36 +384,26 @@ export function PulseClient() {
     rec.lang = 'en-US'
 
     rec.onresult = (e: SpeechRecognitionEvent) => {
-      // Only process results starting from e.resultIndex (the new ones this event)
       let interim = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript
         if (e.results[i].isFinal) {
-          // Accumulate finals in a ref so earlier sentences aren't lost
           finalTranscriptRef.current += (finalTranscriptRef.current ? ' ' : '') + t.trim()
         } else {
           interim = t
         }
       }
       interimRef.current = interim
-
-      // Rebuild full content: original text + all finals so far + current interim
       const base = baseContentRef.current
       const finals = finalTranscriptRef.current
-      const separator = base && finals ? ' ' : ''
-      setContent(base + separator + finals + (finals && interim ? ' ' : '') + interim)
+      const sep = base && finals ? ' ' : ''
+      setContent(base + sep + finals + (finals && interim ? ' ' : '') + interim)
     }
-
     rec.onerror = (e: SpeechRecognitionErrorEvent) => {
       if (e.error !== 'aborted') setVoiceError(`Voice error: ${e.error}`)
       setListening(false)
     }
-
-    rec.onend = () => {
-      setListening(false)
-      interimRef.current = ''
-    }
-
+    rec.onend = () => { setListening(false); interimRef.current = '' }
     rec.start()
     recognitionRef.current = rec
     setListening(true)
@@ -400,13 +429,8 @@ export function PulseClient() {
         body: JSON.stringify({ url: gdocUrl.trim() }),
       })
       const json = await res.json()
-      if (!res.ok) {
-        setGdocError(json.error ?? 'Failed to import document')
-        return
-      }
-      // Prepend or set content from doc
-      const imported = json.content as string
-      setContent(prev => prev ? `${prev}\n\n${imported}` : imported)
+      if (!res.ok) { setGdocError(json.error ?? 'Failed to import document'); return }
+      setContent(prev => prev ? `${prev}\n\n${json.content}` : json.content)
       setGdocSource(gdocUrl.trim())
       setGdocOpen(false)
       setGdocUrl('')
@@ -434,18 +458,13 @@ export function PulseClient() {
       try {
         const res = await fetch('/api/pulse/upload', { method: 'POST', body: fd })
         const json = await res.json()
-        if (res.ok) {
-          results.push(json)
-        } else {
-          setComposeError(json.error ?? 'File upload failed')
-        }
+        if (res.ok) { results.push(json) } else { setComposeError(json.error ?? 'File upload failed') }
       } catch {
         setComposeError('Network error during upload — please try again')
       }
     }
     setAttachments(prev => [...prev, ...results])
     setUploading(false)
-    // Reset input so same file can be re-selected
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -459,12 +478,8 @@ export function PulseClient() {
     setComposeError('')
 
     const source: PulseNote['source'] = gdocSource
-      ? 'google_doc'
-      : listening
-      ? 'voice'
-      : attachments.length > 0
-      ? 'attachment'
-      : 'typed'
+      ? 'google_doc' : listening ? 'voice'
+      : attachments.length > 0 ? 'attachment' : 'typed'
 
     const res = await fetch('/api/pulse', {
       method: 'POST',
@@ -501,9 +516,7 @@ export function PulseClient() {
 
   async function handleDelete(id: string) {
     const res = await fetch(`/api/pulse/${id}`, { method: 'DELETE' })
-    if (res.ok || res.status === 204) {
-      setNotes(prev => prev.filter(n => n.id !== id))
-    }
+    if (res.ok || res.status === 204) setNotes(prev => prev.filter(n => n.id !== id))
   }
 
   // ---------------------------------------------------------------------------
@@ -556,12 +569,14 @@ export function PulseClient() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Compose panel */}
-        <div className="w-[380px] flex-shrink-0 border-r border-zinc-200 bg-white flex flex-col">
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* ── Compose panel ── */}
+        <div className="w-[360px] flex-shrink-0 border-r border-zinc-200 bg-white flex flex-col">
+          <div className="flex-1 no-scrollbar overflow-y-auto p-4 space-y-4">
             <div className="flex gap-2">
               <div className="flex-1">
-                <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Title <span className="text-zinc-400 font-normal">(optional)</span></Label>
+                <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">
+                  Title <span className="text-zinc-400 font-normal">(optional)</span>
+                </Label>
                 <Input
                   type="text"
                   placeholder="e.g. Site visit — Westside"
@@ -590,17 +605,10 @@ export function PulseClient() {
               <Textarea
                 value={content}
                 onChange={e => setContent(e.target.value)}
-                placeholder={
-                  listening
-                    ? 'Listening… speak now'
-                    : 'Write your field observation, or use voice / Google Doc import below…'
-                }
-                className={cn(
-                  'min-h-[180px] resize-none text-sm leading-relaxed',
-                  listening && 'ring-2 ring-red-400 ring-offset-1'
-                )}
+                placeholder={listening ? 'Listening… speak now' : 'Write your field observation…'}
+                className={cn('min-h-[180px] resize-none text-sm leading-relaxed',
+                  listening && 'ring-2 ring-red-400 ring-offset-1')}
               />
-              {/* Voice indicator */}
               {listening && (
                 <div className="mt-1 flex items-center gap-1.5 text-xs text-red-500">
                   <span className="inline-block h-2 w-2 rounded-full bg-red-500 animate-pulse" />
@@ -609,8 +617,7 @@ export function PulseClient() {
               )}
               {voiceError && (
                 <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
-                  <AlertCircle className="h-3 w-3" />
-                  {voiceError}
+                  <AlertCircle className="h-3 w-3" />{voiceError}
                 </div>
               )}
             </div>
@@ -618,64 +625,38 @@ export function PulseClient() {
             {/* Tool row */}
             <div className="flex items-center gap-2">
               {hasSpeech && (
-                <button
-                  type="button"
-                  onClick={listening ? stopListening : startListening}
-                  title={listening ? 'Stop recording' : 'Start voice input'}
+                <button type="button" onClick={listening ? stopListening : startListening}
                   className={cn(
                     'flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
-                    listening
-                      ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
+                    listening ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
                       : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'
-                  )}
-                >
+                  )}>
                   {listening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
                   {listening ? 'Stop' : 'Voice'}
                 </button>
               )}
-
-              <button
-                type="button"
-                onClick={() => { setGdocOpen(true); setGdocError('') }}
-                className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors"
-              >
-                <Link2 className="h-3.5 w-3.5" />
-                Google Doc
+              <button type="button" onClick={() => { setGdocOpen(true); setGdocError('') }}
+                className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors">
+                <Link2 className="h-3.5 w-3.5" />Google Doc
               </button>
-
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors disabled:opacity-50"
-              >
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading}
+                className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors disabled:opacity-50">
                 {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
                 Attach
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.gif,.webp"
-                multiple
-                className="hidden"
-                onChange={handleFileChange}
-              />
+              <input ref={fileInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp"
+                multiple className="hidden" onChange={handleFileChange} />
             </div>
 
-            {/* Pending attachments */}
             {attachments.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {attachments.map((a, i) => (
-                  <AttachmentChip
-                    key={i}
-                    attachment={a}
-                    onRemove={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
-                  />
+                  <AttachmentChip key={i} attachment={a}
+                    onRemove={() => setAttachments(prev => prev.filter((_, j) => j !== i))} />
                 ))}
               </div>
             )}
 
-            {/* Google Doc source indicator */}
             {gdocSource && (
               <div className="flex items-center gap-1.5 rounded-md bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700">
                 <Link2 className="h-3 w-3 flex-shrink-0" />
@@ -688,64 +669,134 @@ export function PulseClient() {
 
             {composeError && (
               <div className="flex items-center gap-1.5 rounded-md bg-red-50 px-2.5 py-1.5 text-xs text-red-600">
-                <AlertCircle className="h-3.5 w-3.5" />
-                {composeError}
+                <AlertCircle className="h-3.5 w-3.5" />{composeError}
               </div>
             )}
           </div>
 
-          {/* Save button pinned to bottom */}
           <div className="border-t border-zinc-100 p-4">
-            <Button
-              onClick={handleSave}
-              disabled={!content.trim() || saving}
-              className="w-full bg-orange-600 hover:bg-orange-700 text-white"
-            >
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
+            <Button onClick={handleSave} disabled={!content.trim() || saving}
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white">
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
               Save Note
             </Button>
           </div>
         </div>
 
-        {/* Notes list */}
-        <div className="flex-1 overflow-y-auto bg-zinc-50 p-6">
-          {loading ? (
-            <div className="flex items-center justify-center py-16 text-zinc-400 text-sm gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading notes…
+        {/* ── Notes list ── */}
+        <div className="flex-1 flex flex-col overflow-hidden bg-white">
+          {/* Toolbar */}
+          <div className="border-b border-zinc-100 px-4 py-2.5 flex items-center gap-3">
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+              <Input
+                placeholder="Search notes…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-8 h-8 text-sm"
+              />
             </div>
-          ) : notes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="mb-3 rounded-full bg-orange-50 p-4">
-                <ChevronDown className="h-6 w-6 text-orange-300" />
-              </div>
-              <p className="text-sm font-medium text-zinc-600">No notes yet</p>
-              <p className="mt-1 text-xs text-zinc-400">
-                Write your first field observation using the panel on the left.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3 max-w-2xl">
-              {notes.map(note => (
-                <NoteCard
-                  key={note.id}
-                  note={note}
-                  currentUserId={currentUserId}
-                  isAdmin={isAdmin}
-                  onEdit={openEdit}
-                  onDelete={handleDelete}
-                />
-              ))}
+            <span className="text-xs text-zinc-400 ml-auto">
+              {filtered.length} {filtered.length === 1 ? 'note' : 'notes'}
+              {search && notes.length !== filtered.length && ` of ${notes.length}`}
+            </span>
+          </div>
+
+          {/* Table header */}
+          {!loading && notes.length > 0 && (
+            <div className="grid grid-cols-[130px_1fr_160px_90px] border-b border-zinc-100 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+              <button onClick={() => toggleSort('date')}
+                className="flex items-center gap-1 hover:text-zinc-600 transition-colors text-left">
+                Date <SortIcon active={sortField === 'date'} dir={sortDir} />
+              </button>
+              <span>Note</span>
+              <button onClick={() => toggleSort('author')}
+                className="flex items-center gap-1 hover:text-zinc-600 transition-colors text-left">
+                Author <SortIcon active={sortField === 'author'} dir={sortDir} />
+              </button>
+              <span>Source</span>
             </div>
           )}
+
+          {/* Rows */}
+          <div className="flex-1 overflow-y-auto divide-y divide-zinc-50">
+            {loading ? (
+              <div className="flex items-center justify-center py-16 text-zinc-400 text-sm gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />Loading notes…
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <Radio className="h-8 w-8 text-zinc-200 mb-3" />
+                <p className="text-sm font-medium text-zinc-500">
+                  {search ? 'No notes match your search' : 'No notes yet'}
+                </p>
+                <p className="mt-1 text-xs text-zinc-400">
+                  {search ? 'Try a different search term.' : 'Write your first field observation using the panel on the left.'}
+                </p>
+              </div>
+            ) : (
+              filtered.map(note => {
+                const preview = note.content.replace(/\s+/g, ' ').slice(0, 120)
+                const hasAttachments = note.attachments.length > 0
+                return (
+                  <button
+                    key={note.id}
+                    onClick={() => setViewNote(note)}
+                    className="w-full grid grid-cols-[130px_1fr_160px_90px] items-center gap-2 px-4 py-2.5 text-left hover:bg-zinc-50 transition-colors group"
+                  >
+                    {/* Date */}
+                    <span className="text-xs text-zinc-500 flex-shrink-0 tabular-nums">
+                      {formatDate(note.note_date)}
+                    </span>
+
+                    {/* Title + preview */}
+                    <span className="min-w-0">
+                      {note.title
+                        ? <span className="block text-sm font-medium text-zinc-800 truncate">{note.title}</span>
+                        : <span className="block text-sm text-zinc-600 truncate">{preview}</span>
+                      }
+                      {note.title && (
+                        <span className="block text-xs text-zinc-400 truncate">{preview}</span>
+                      )}
+                    </span>
+
+                    {/* Author */}
+                    <span className="text-xs text-zinc-500 truncate">
+                      {note.author_id === currentUserId ? 'You' : (note.author_email ?? '—')}
+                    </span>
+
+                    {/* Source + attachment dot */}
+                    <span className="flex items-center gap-1.5">
+                      <span className="rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-600 whitespace-nowrap">
+                        {SOURCE_LABELS[note.source] ?? note.source}
+                      </span>
+                      {hasAttachments && (
+                        <Paperclip className="h-3 w-3 text-zinc-300 flex-shrink-0" />
+                      )}
+                    </span>
+                  </button>
+                )
+              })
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Google Doc Import Dialog */}
+      {/* ── Note detail dialog ── */}
+      <Dialog open={!!viewNote} onOpenChange={open => { if (!open) setViewNote(null) }}>
+        {viewNote && (
+          <NoteDetailDialog
+            note={viewNote}
+            currentUserId={currentUserId}
+            isAdmin={isAdmin}
+            onEdit={openEdit}
+            onDelete={handleDelete}
+            onClose={() => setViewNote(null)}
+          />
+        )}
+      </Dialog>
+
+      {/* ── Google Doc Import Dialog ── */}
       <Dialog open={gdocOpen} onOpenChange={open => { setGdocOpen(open); if (!open) { setGdocUrl(''); setGdocError('') } }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -755,14 +806,9 @@ export function PulseClient() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 pt-2">
-            <Input
-              type="url"
-              placeholder="https://docs.google.com/document/d/..."
-              value={gdocUrl}
-              onChange={e => setGdocUrl(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleGdocImport() }}
-              autoFocus
-            />
+            <Input type="url" placeholder="https://docs.google.com/document/d/…"
+              value={gdocUrl} onChange={e => setGdocUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleGdocImport() }} autoFocus />
             {gdocError && (
               <div className="flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
                 <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
@@ -773,21 +819,16 @@ export function PulseClient() {
               <Button variant="ghost" size="sm" onClick={() => { setGdocOpen(false); setGdocUrl(''); setGdocError('') }}>
                 Cancel
               </Button>
-              <Button
-                size="sm"
-                onClick={handleGdocImport}
-                disabled={gdocLoading || !gdocUrl.trim()}
-                className="bg-orange-600 hover:bg-orange-700 text-white"
-              >
-                {gdocLoading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-                Import
+              <Button size="sm" onClick={handleGdocImport} disabled={gdocLoading || !gdocUrl.trim()}
+                className="bg-orange-600 hover:bg-orange-700 text-white">
+                {gdocLoading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}Import
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog */}
+      {/* ── Edit Dialog ── */}
       <Dialog open={!!editNote} onOpenChange={open => { if (!open) setEditNote(null) }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -795,48 +836,30 @@ export function PulseClient() {
           </DialogHeader>
           <div className="space-y-3 pt-2">
             <div>
-              <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Title <span className="text-zinc-400 font-normal">(optional)</span></Label>
-              <Input
-                type="text"
-                placeholder="e.g. Site visit — Westside"
-                value={editTitle}
-                onChange={e => setEditTitle(e.target.value)}
-                className="text-sm h-8"
-                maxLength={200}
-              />
+              <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">
+                Title <span className="text-zinc-400 font-normal">(optional)</span>
+              </Label>
+              <Input type="text" placeholder="e.g. Site visit — Westside"
+                value={editTitle} onChange={e => setEditTitle(e.target.value)}
+                className="text-sm h-8" maxLength={200} />
             </div>
             <div>
               <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Note date</Label>
               <div className="relative">
                 <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
-                <Input
-                  type="date"
-                  value={editDate}
-                  onChange={e => setEditDate(e.target.value)}
-                  className="pl-8 text-sm h-8"
-                />
+                <Input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
+                  className="pl-8 text-sm h-8" />
               </div>
             </div>
-            <Textarea
-              value={editContent}
-              onChange={e => setEditContent(e.target.value)}
-              className="min-h-[200px] resize-none text-sm"
-            />
+            <Textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+              className="min-h-[200px] resize-none text-sm" />
             <div className="flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setEditNote(null)}>
-                <X className="mr-1.5 h-3.5 w-3.5" />
-                Cancel
+                <X className="mr-1.5 h-3.5 w-3.5" />Cancel
               </Button>
-              <Button
-                size="sm"
-                onClick={handleEditSave}
-                disabled={editSaving || !editContent.trim()}
-                className="bg-orange-600 hover:bg-orange-700 text-white"
-              >
-                {editSaving
-                  ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  : <Check className="mr-1.5 h-3.5 w-3.5" />
-                }
+              <Button size="sm" onClick={handleEditSave} disabled={editSaving || !editContent.trim()}
+                className="bg-orange-600 hover:bg-orange-700 text-white">
+                {editSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
                 Save changes
               </Button>
             </div>
