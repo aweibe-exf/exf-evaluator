@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 const updateSchema = z.object({
+  title: z.string().max(200).nullable().optional(),
   content: z.string().min(1).max(50000).optional(),
   note_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   attachments: z.array(z.object({
@@ -10,6 +11,7 @@ const updateSchema = z.object({
     url: z.string(),
     size: z.number(),
     type: z.string(),
+    extracted_text: z.string().nullable().optional(),
   })).optional(),
 })
 

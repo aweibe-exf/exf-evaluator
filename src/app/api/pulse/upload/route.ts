@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import * as pdfParseModule from 'pdf-parse'
+// pdf-parse exports vary by bundler; support both default and named export
+const pdfParse: (buf: Buffer) => Promise<{ text: string }> =
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (pdfParseModule as any).default ?? pdfParseModule
 
 const BUCKET = 'pulse-note-attachments'
 const MAX_SIZE = 20 * 1024 * 1024 // 20 MB
+const MAX_EXTRACTED_CHARS = 12000  // ~3k tokens — enough for AI context
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -38,6 +44,23 @@ export async function POST(request: Request) {
   const fileName = `${user.id}/${programId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
 
   const arrayBuffer = await file.arrayBuffer()
+
+  // Extract text from PDFs before uploading
+  let extractedText: string | null = null
+  if (file.type === 'application/pdf') {
+    try {
+      const buffer = Buffer.from(arrayBuffer)
+      const parsed = await pdfParse(buffer)
+      const raw = parsed.text?.replace(/\s+/g, ' ').trim() ?? ''
+      if (raw.length > 0) {
+        extractedText = raw.slice(0, MAX_EXTRACTED_CHARS)
+      }
+    } catch (err) {
+      // Non-fatal — upload still succeeds, AI just won't have the text
+      console.warn('PDF text extraction failed:', err)
+    }
+  }
+
   const { error: uploadError } = await service.storage
     .from(BUCKET)
     .upload(fileName, arrayBuffer, {
@@ -57,5 +80,6 @@ export async function POST(request: Request) {
     url: publicUrl,
     size: file.size,
     type: file.type,
+    extracted_text: extractedText,
   }, { status: 201 })
 }

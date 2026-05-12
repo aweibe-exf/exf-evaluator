@@ -3,18 +3,22 @@ import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import type { Json } from '@/types/database'
 
+const attachmentSchema = z.object({
+  name: z.string(),
+  url: z.string(),
+  size: z.number(),
+  type: z.string(),
+  extracted_text: z.string().nullable().optional(),
+})
+
 const createSchema = z.object({
   program_id: z.string().min(1),
+  title: z.string().max(200).optional(),
   content: z.string().min(1).max(50000),
   source: z.enum(['typed', 'voice', 'google_doc', 'attachment']).default('typed'),
   note_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   google_doc_url: z.string().url().optional(),
-  attachments: z.array(z.object({
-    name: z.string(),
-    url: z.string(),
-    size: z.number(),
-    type: z.string(),
-  })).optional(),
+  attachments: z.array(attachmentSchema).optional(),
 })
 
 export async function GET(request: Request) {
@@ -48,7 +52,7 @@ export async function POST(request: Request) {
   const parsed = createSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
 
-  const { program_id, content, source, note_date, google_doc_url, attachments } = parsed.data
+  const { program_id, title, content, source, note_date, google_doc_url, attachments } = parsed.data
 
   // Verify membership
   const { count } = await supabase
@@ -64,6 +68,7 @@ export async function POST(request: Request) {
       program_id,
       author_id: user.id,
       author_email: user.email ?? null,
+      title: title?.trim() || null,
       content,
       source,
       note_date: note_date ?? new Date().toISOString().slice(0, 10),

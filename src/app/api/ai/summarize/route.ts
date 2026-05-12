@@ -183,7 +183,7 @@ export async function POST(request: Request) {
   // Fetch Pulse field notes that overlap the report date range
   const { data: pulseNotes } = await service
     .from('pulse_notes')
-    .select('content, source, note_date')
+    .select('title, content, source, note_date, attachments')
     .eq('program_id', program_id)
     .gte('note_date', date_from)
     .lte('note_date', date_to)
@@ -192,7 +192,16 @@ export async function POST(request: Request) {
 
   const pulseContext = (pulseNotes && pulseNotes.length > 0)
     ? `\n\nPULSE FIELD NOTES (${pulseNotes.length} entries from ${date_from} to ${date_to}):\nThese are qualitative observations recorded by program staff in the field. Incorporate relevant insights where they support or enrich the analysis.\n\n` +
-      pulseNotes.map(p => `[${p.note_date}] ${String(p.content).slice(0, 500)}`).join('\n\n')
+      pulseNotes.map(p => {
+        const heading = p.title ? `[${p.note_date}] "${p.title}"` : `[${p.note_date}]`
+        const body = String(p.content).slice(0, 500)
+        const attachments = (p.attachments as Array<{ name?: string; extracted_text?: string | null }> | null) ?? []
+        const attachText = attachments
+          .filter(a => a.extracted_text)
+          .map(a => `  [Attachment: ${a.name ?? 'file'}]\n  ${String(a.extracted_text).slice(0, 800)}`)
+          .join('\n')
+        return attachText ? `${heading}: ${body}\n${attachText}` : `${heading}: ${body}`
+      }).join('\n\n')
     : ''
 
   const prompt = buildPrompt(

@@ -40,10 +40,12 @@ interface Attachment {
   url: string
   size: number
   type: string
+  extracted_text?: string | null
 }
 
 interface PulseNote {
   id: string
+  title: string | null
   content: string
   source: 'typed' | 'voice' | 'google_doc' | 'attachment'
   note_date: string
@@ -162,7 +164,10 @@ function NoteCard({
       {/* Header row */}
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-zinc-900">{formatDate(note.note_date)}</span>
+          {note.title && (
+            <span className="text-sm font-semibold text-zinc-900">{note.title}</span>
+          )}
+          <span className={cn('text-xs text-zinc-500', note.title && 'before:content-["·"] before:mr-2')}>{formatDate(note.note_date)}</span>
           <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-600">
             {sourceLabel[note.source] ?? note.source}
           </span>
@@ -251,6 +256,7 @@ export function PulseClient() {
   const [currentUserId, setCurrentUserId] = useState('')
 
   // Compose state
+  const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [noteDate, setNoteDate] = useState(todayIso())
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -279,6 +285,7 @@ export function PulseClient() {
 
   // Edit dialog
   const [editNote, setEditNote] = useState<PulseNote | null>(null)
+  const [editTitle, setEditTitle] = useState('')
   const [editContent, setEditContent] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editSaving, setEditSaving] = useState(false)
@@ -456,6 +463,7 @@ export function PulseClient() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         program_id: currentProgram.id,
+        title: title.trim() || undefined,
         content: content.trim(),
         source,
         note_date: noteDate,
@@ -467,6 +475,7 @@ export function PulseClient() {
     if (res.ok) {
       const created = await res.json()
       setNotes(prev => [created, ...prev])
+      setTitle('')
       setContent('')
       setNoteDate(todayIso())
       setAttachments([])
@@ -495,6 +504,7 @@ export function PulseClient() {
 
   function openEdit(note: PulseNote) {
     setEditNote(note)
+    setEditTitle(note.title ?? '')
     setEditContent(note.content)
     setEditDate(note.note_date)
   }
@@ -505,7 +515,7 @@ export function PulseClient() {
     const res = await fetch(`/api/pulse/${editNote.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: editContent.trim(), note_date: editDate }),
+      body: JSON.stringify({ title: editTitle.trim() || null, content: editContent.trim(), note_date: editDate }),
     })
     if (res.ok) {
       const updated = await res.json()
@@ -541,16 +551,29 @@ export function PulseClient() {
         {/* Compose panel */}
         <div className="w-[380px] flex-shrink-0 border-r border-zinc-200 bg-white flex flex-col">
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div>
-              <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Note date</Label>
-              <div className="relative">
-                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Title <span className="text-zinc-400 font-normal">(optional)</span></Label>
                 <Input
-                  type="date"
-                  value={noteDate}
-                  onChange={e => setNoteDate(e.target.value)}
-                  className="pl-8 text-sm h-8"
+                  type="text"
+                  placeholder="e.g. Site visit — Westside"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  className="text-sm h-8"
+                  maxLength={200}
                 />
+              </div>
+              <div className="flex-shrink-0">
+                <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Date</Label>
+                <div className="relative">
+                  <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+                  <Input
+                    type="date"
+                    value={noteDate}
+                    onChange={e => setNoteDate(e.target.value)}
+                    className="pl-7 text-sm h-8 w-[140px]"
+                  />
+                </div>
               </div>
             </div>
 
@@ -763,6 +786,17 @@ export function PulseClient() {
             <DialogTitle>Edit Note</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 pt-2">
+            <div>
+              <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Title <span className="text-zinc-400 font-normal">(optional)</span></Label>
+              <Input
+                type="text"
+                placeholder="e.g. Site visit — Westside"
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                className="text-sm h-8"
+                maxLength={200}
+              />
+            </div>
             <div>
               <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Note date</Label>
               <div className="relative">

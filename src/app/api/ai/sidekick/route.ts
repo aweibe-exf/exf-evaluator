@@ -231,7 +231,7 @@ export async function POST(request: Request) {
   // Fetch Pulse notes visible to this user (RLS handles staff vs admin visibility)
   const { data: rawPulse } = await supabase
     .from('pulse_notes')
-    .select('content, source, note_date, author_email')
+    .select('title, content, source, note_date, author_email, attachments')
     .eq('program_id', program_id)
     .order('note_date', { ascending: false })
     .limit(200)
@@ -241,8 +241,16 @@ export async function POST(request: Request) {
       rawPulse.map(p => {
         const author = p.author_email ?? 'unknown'
         const src = p.source ?? 'typed'
-        return `[${p.note_date}] (${src}, by ${author}): ${String(p.content).slice(0, 400)}`
-      }).join('\n')
+        const heading = p.title ? `[${p.note_date}] "${p.title}" (${src}, by ${author})` : `[${p.note_date}] (${src}, by ${author})`
+        const body = String(p.content).slice(0, 400)
+        // Include extracted attachment text if present
+        const attachments = (p.attachments as Array<{ name?: string; extracted_text?: string | null }> | null) ?? []
+        const attachText = attachments
+          .filter(a => a.extracted_text)
+          .map(a => `  [Attachment: ${a.name ?? 'file'}]\n  ${String(a.extracted_text).slice(0, 600)}`)
+          .join('\n')
+        return attachText ? `${heading}: ${body}\n${attachText}` : `${heading}: ${body}`
+      }).join('\n\n')
     : ''
 
   // Inject context as first user message preamble (invisible to user)
