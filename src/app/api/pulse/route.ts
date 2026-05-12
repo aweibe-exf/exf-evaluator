@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
+import type { Json } from '@/types/database'
 
 const createSchema = z.object({
   program_id: z.string().min(1),
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
   // RLS handles visibility: authors see own, admins see all
   const { data, error } = await supabase
     .from('pulse_notes')
-    .select('*, author:author_id(email)')
+    .select('*')
     .eq('program_id', programId)
     .order('note_date', { ascending: false })
     .order('created_at', { ascending: false })
@@ -62,13 +63,14 @@ export async function POST(request: Request) {
     .insert({
       program_id,
       author_id: user.id,
+      author_email: user.email ?? null,
       content,
       source,
       note_date: note_date ?? new Date().toISOString().slice(0, 10),
       google_doc_url: google_doc_url ?? null,
-      attachments: (attachments ?? []) as never,
+      attachments: (attachments ?? []) as Json,
     })
-    .select('*, author:author_id(email)')
+    .select('*')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

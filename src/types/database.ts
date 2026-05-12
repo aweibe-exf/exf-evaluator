@@ -312,6 +312,7 @@ export type Database = {
           id: string
           program_id: string
           author_id: string
+          author_email: string | null
           content: string
           source: string
           note_date: string
@@ -324,6 +325,7 @@ export type Database = {
           id?: string
           program_id: string
           author_id: string
+          author_email?: string | null
           content?: string
           source?: string
           note_date?: string
@@ -336,6 +338,7 @@ export type Database = {
           id?: string
           program_id?: string
           author_id?: string
+          author_email?: string | null
           content?: string
           source?: string
           note_date?: string

@@ -231,7 +231,7 @@ export async function POST(request: Request) {
   // Fetch Pulse notes visible to this user (RLS handles staff vs admin visibility)
   const { data: rawPulse } = await supabase
     .from('pulse_notes')
-    .select('content, source, note_date, author:author_id(email)')
+    .select('content, source, note_date, author_email')
     .eq('program_id', program_id)
     .order('note_date', { ascending: false })
     .limit(200)
@@ -239,7 +239,7 @@ export async function POST(request: Request) {
   const pulseSection = (rawPulse && rawPulse.length > 0)
     ? `\n\nPULSE FIELD NOTES (${rawPulse.length} entries):\n` +
       rawPulse.map(p => {
-        const author = (p.author as { email?: string } | null)?.email ?? 'unknown'
+        const author = p.author_email ?? 'unknown'
         const src = p.source ?? 'typed'
         return `[${p.note_date}] (${src}, by ${author}): ${String(p.content).slice(0, 400)}`
       }).join('\n')

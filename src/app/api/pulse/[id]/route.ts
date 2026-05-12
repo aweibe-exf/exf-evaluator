@@ -36,7 +36,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     .from('pulse_notes')
     .update(parsed.data as never)
     .eq('id', id)
-    .select('*, author:author_id(email)')
+    .select('*')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
