@@ -242,14 +242,14 @@ export async function POST(request: Request) {
         const author = p.author_email ?? 'unknown'
         const src = p.source ?? 'typed'
         const heading = p.title ? `[${p.note_date}] "${p.title}" (${src}, by ${author})` : `[${p.note_date}] (${src}, by ${author})`
-        const body = String(p.content).slice(0, 400)
+        const body = String(p.content).slice(0, 1200)
         // Include extracted attachment text if present
         const attachments = (p.attachments as Array<{ name?: string; extracted_text?: string | null }> | null) ?? []
         const attachText = attachments
           .filter(a => a.extracted_text)
-          .map(a => `  [Attachment: ${a.name ?? 'file'}]\n  ${String(a.extracted_text).slice(0, 600)}`)
+          .map(a => `  [ATTACHMENT FULL TEXT — "${a.name ?? 'file'}"]\n${String(a.extracted_text).slice(0, 10000)}\n  [END ATTACHMENT]`)
           .join('\n')
-        return attachText ? `${heading}: ${body}\n${attachText}` : `${heading}: ${body}`
+        return attachText ? `${heading}\nNote: ${body}\n${attachText}` : `${heading}: ${body}`
       }).join('\n\n')
     : ''
 

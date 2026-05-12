@@ -23,6 +23,7 @@ import {
   Sparkles,
   BookMarked,
   Radio,
+  PieChart,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -61,6 +62,7 @@ const navItems: NavItem[] = [
   { label: 'Reports', href: '/reports', icon: FileBarChart2 },
   { label: 'Impact Dashboard', href: '/impact', icon: BarChart3 },
   { label: 'Evaluation Sidekick', href: '/sidekick', icon: Sparkles },
+  { label: 'Data Visualizer', href: '/visualizer', icon: PieChart },
   { label: 'Pulse', href: '/pulse', icon: Radio },
 ]
 

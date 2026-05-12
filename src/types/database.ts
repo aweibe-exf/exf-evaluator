@@ -307,6 +307,35 @@ export type Database = {
           },
         ]
       }
+      saved_visualizations: {
+        Row: {
+          id: string
+          program_id: string
+          created_by: string
+          created_by_email: string | null
+          title: string
+          description: string | null
+          prompt: string
+          config: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          program_id: string
+          created_by: string
+          created_by_email?: string | null
+          title: string
+          description?: string | null
+          prompt: string
+          config: Json
+          created_at?: string
+        }
+        Update: {
+          title?: string
+          description?: string | null
+        }
+        Relationships: []
+      }
       pulse_notes: {
         Row: {
           id: string
