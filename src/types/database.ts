@@ -307,6 +307,45 @@ export type Database = {
           },
         ]
       }
+      pulse_notes: {
+        Row: {
+          id: string
+          program_id: string
+          author_id: string
+          content: string
+          source: string
+          note_date: string
+          google_doc_url: string | null
+          attachments: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          program_id: string
+          author_id: string
+          content?: string
+          source?: string
+          note_date?: string
+          google_doc_url?: string | null
+          attachments?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          program_id?: string
+          author_id?: string
+          content?: string
+          source?: string
+          note_date?: string
+          google_doc_url?: string | null
+          attachments?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       program_narratives: {
         Row: {
           id: string

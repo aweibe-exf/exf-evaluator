@@ -43,7 +43,8 @@ function buildPrompt(
   dateTo: string,
   submissions: Record<string, unknown>[],
   fields: FormField[],
-  narratives?: NarrativeContext[]
+  narratives?: NarrativeContext[],
+  pulseContext?: string
 ): string {
   const fieldMap = Object.fromEntries(fields.map(f => [f.id, f.label || f.type]))
 
@@ -69,7 +70,7 @@ function buildPrompt(
       }).join('\n\n---\n\n')}\n\n===\n\n`
     : ''
 
-  const context = `${narrativeSection}Program: ${programName}\nForm: ${formName}\nPeriod: ${dateFrom} to ${dateTo}\nTotal responses: ${submissions.length}\n\n${readable}`
+  const context = `${narrativeSection}Program: ${programName}\nForm: ${formName}\nPeriod: ${dateFrom} to ${dateTo}\nTotal responses: ${submissions.length}\n\n${readable}${pulseContext ?? ''}`
 
   const prompts: Record<string, string> = {
     trend: `You are an analyst for an extension education program. Based on the following survey responses, write a concise trend analysis (3-5 paragraphs) identifying key patterns, changes over time, and notable findings. Use specific data points where possible. Where award narrative context is provided, connect findings to the program's stated goals. Write for program administrators.\n\n${context}`,
@@ -179,6 +180,21 @@ export async function POST(request: Request) {
     .gte('ends_at', date_from)
     .order('starts_at', { ascending: true })
 
+  // Fetch Pulse field notes that overlap the report date range
+  const { data: pulseNotes } = await service
+    .from('pulse_notes')
+    .select('content, source, note_date')
+    .eq('program_id', program_id)
+    .gte('note_date', date_from)
+    .lte('note_date', date_to)
+    .order('note_date', { ascending: true })
+    .limit(100)
+
+  const pulseContext = (pulseNotes && pulseNotes.length > 0)
+    ? `\n\nPULSE FIELD NOTES (${pulseNotes.length} entries from ${date_from} to ${date_to}):\nThese are qualitative observations recorded by program staff in the field. Incorporate relevant insights where they support or enrich the analysis.\n\n` +
+      pulseNotes.map(p => `[${p.note_date}] ${String(p.content).slice(0, 500)}`).join('\n\n')
+    : ''
+
   const prompt = buildPrompt(
     summary_type,
     program.name,
@@ -187,7 +203,8 @@ export async function POST(request: Request) {
     date_to,
     submissions_final as Record<string, unknown>[],
     fields,
-    narratives ?? []
+    narratives ?? [],
+    pulseContext
   )
 
   const message = await client.messages.create({

@@ -22,6 +22,7 @@ import {
   ScrollText,
   Sparkles,
   BookMarked,
+  Radio,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -60,6 +61,7 @@ const navItems: NavItem[] = [
   { label: 'Reports', href: '/reports', icon: FileBarChart2 },
   { label: 'Impact Dashboard', href: '/impact', icon: BarChart3 },
   { label: 'Evaluation Sidekick', href: '/sidekick', icon: Sparkles },
+  { label: 'Pulse', href: '/pulse', icon: Radio },
 ]
 
 const settingsItems: NavItem[] = [

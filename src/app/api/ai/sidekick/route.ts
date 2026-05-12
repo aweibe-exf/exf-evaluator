@@ -228,10 +228,27 @@ export async function POST(request: Request) {
 
   const context = buildContext(program.name, forms, submissions)
 
+  // Fetch Pulse notes visible to this user (RLS handles staff vs admin visibility)
+  const { data: rawPulse } = await supabase
+    .from('pulse_notes')
+    .select('content, source, note_date, author:author_id(email)')
+    .eq('program_id', program_id)
+    .order('note_date', { ascending: false })
+    .limit(200)
+
+  const pulseSection = (rawPulse && rawPulse.length > 0)
+    ? `\n\nPULSE FIELD NOTES (${rawPulse.length} entries):\n` +
+      rawPulse.map(p => {
+        const author = (p.author as { email?: string } | null)?.email ?? 'unknown'
+        const src = p.source ?? 'typed'
+        return `[${p.note_date}] (${src}, by ${author}): ${String(p.content).slice(0, 400)}`
+      }).join('\n')
+    : ''
+
   // Inject context as first user message preamble (invisible to user)
   const contextMessage: Anthropic.MessageParam = {
     role: 'user',
-    content: `[DATA CONTEXT — use this to answer questions]\n\n${context}\n\n[END DATA CONTEXT]`,
+    content: `[DATA CONTEXT — use this to answer questions]\n\n${context}${pulseSection}\n\n[END DATA CONTEXT]`,
   }
   const contextAck: Anthropic.MessageParam = {
     role: 'assistant',
