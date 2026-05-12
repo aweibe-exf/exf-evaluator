@@ -75,7 +75,7 @@ function escCsv(v: unknown): string {
   return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-type StatusFilter = 'all' | 'submitted' | 'reviewed' | 'flagged' | 'draft'
+type StatusFilter = 'all' | 'submitted' | 'reviewed' | 'flagged' | 'draft' | 'unassigned'
 type ActiveTab = 'list' | 'table' | 'respondents'
 
 const statusConfig: Record<string, { label: string; className: string }> = {
@@ -90,6 +90,7 @@ const filterButtons: { key: StatusFilter; label: string }[] = [
   { key: 'submitted', label: 'Submitted' },
   { key: 'reviewed', label: 'Reviewed' },
   { key: 'flagged', label: 'Flagged' },
+  { key: 'unassigned', label: 'Unassigned' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -765,7 +766,10 @@ export function SubmissionsClient() {
       const q = search.toLowerCase()
       return email.includes(q) || formName.includes(q)
     })
-    .filter(s => statusFilter === 'all' || s.status === statusFilter)
+    .filter(s => {
+      if (statusFilter === 'unassigned') return !s.respondent_email
+      return statusFilter === 'all' || s.status === statusFilter
+    })
 
   const tabs: { key: ActiveTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { key: 'list', label: 'All Submissions', icon: List },
