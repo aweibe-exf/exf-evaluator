@@ -13,7 +13,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
-  Search, Inbox, ChevronRight, Download, UserRoundCog,
+  Search, Inbox, ChevronRight, Download,
   List, Table2, UserSearch, ChevronDown, Calendar,
   FileText, CheckCircle2, Clock, UserPlus, X,
 } from 'lucide-react'
@@ -694,10 +694,10 @@ export function SubmissionsClient() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [activeTab, setActiveTab] = useState<ActiveTab>('list')
-  const [bulkReassignOpen, setBulkReassignOpen] = useState(false)
-  const [bulkFrom, setBulkFrom] = useState('')
-  const [bulkTo, setBulkTo] = useState('')
-  const [bulkBusy, setBulkBusy] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false)
+  const [bulkAssignEmail, setBulkAssignEmail] = useState('')
+  const [bulkAssignBusy, setBulkAssignBusy] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!currentProgram) return
@@ -718,25 +718,44 @@ export function SubmissionsClient() {
     setSubmissions(prev => prev.map(s => s.id === id ? { ...s, respondent_email: email } : s))
   }
 
-  async function handleBulkReassign() {
-    if (!currentProgram || !bulkFrom.trim() || !bulkTo.trim()) return
-    setBulkBusy(true)
-    const res = await fetch('/api/submissions/reassign', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from_email: bulkFrom.trim(), to_email: bulkTo.trim(), program_id: currentProgram.id }),
-    })
-    setBulkBusy(false)
-    if (res.ok) {
-      const { updated } = await res.json()
-      toast.success(`${updated} submission${updated !== 1 ? 's' : ''} reassigned to ${bulkTo.trim()}`)
-      setBulkReassignOpen(false)
-      setBulkFrom('')
-      setBulkTo('')
-      fetchData()
-    } else {
-      toast.error('Failed to reassign submissions')
+  async function handleBulkAssign() {
+    const email = bulkAssignEmail.trim().toLowerCase()
+    if (!email || selectedIds.size === 0) return
+    setBulkAssignBusy(true)
+    const ids = [...selectedIds]
+    const results = await Promise.allSettled(
+      ids.map(id =>
+        fetch(`/api/submissions/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ respondent_email: email }),
+        })
+      )
+    )
+    setBulkAssignBusy(false)
+    const succeeded = results.filter(r => r.status === 'fulfilled' && (r.value as Response).ok).length
+    const failed = ids.length - succeeded
+    if (succeeded > 0) {
+      toast.success(`Assigned ${succeeded} submission${succeeded !== 1 ? 's' : ''} to ${email}`)
+      setSubmissions(prev => prev.map(s => selectedIds.has(s.id) ? { ...s, respondent_email: email } : s))
+      setSelectedIds(new Set())
+      setBulkAssignOpen(false)
+      setBulkAssignEmail('')
     }
+    if (failed > 0) toast.error(`${failed} assignment${failed !== 1 ? 's' : ''} failed`)
+  }
+
+  function toggleSelect(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll(ids: string[]) {
+    setSelectedIds(prev => prev.size === ids.length ? new Set() : new Set(ids))
   }
 
   const filtered = submissions
@@ -765,11 +784,6 @@ export function SubmissionsClient() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {submissions.length > 0 && (
-            <Button variant="outline" size="sm" className="gap-1.5 h-8 text-[13px]" onClick={() => setBulkReassignOpen(true)}>
-              <UserRoundCog className="h-3.5 w-3.5" /> Reassign person
-            </Button>
-          )}
           {currentProgram && submissions.length > 0 && (
             <a href={`/api/submissions/export?program_id=${currentProgram.id}`} download>
               <Button variant="outline" size="sm" className="gap-1.5 h-8 text-[13px]">
@@ -815,6 +829,28 @@ export function SubmissionsClient() {
                   ))}
                 </div>
               </div>
+              {/* Bulk selection action bar */}
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-3 mb-3 rounded-lg bg-orange-50 border border-orange-200 px-4 py-2.5">
+                  <span className="text-[13px] font-medium text-orange-800">
+                    {selectedIds.size} selected
+                  </span>
+                  <Button
+                    size="sm"
+                    className="h-7 gap-1.5 text-[12px] bg-orange-600 hover:bg-orange-700"
+                    onClick={() => setBulkAssignOpen(true)}
+                  >
+                    <UserPlus className="h-3.5 w-3.5" /> Assign to contact
+                  </Button>
+                  <button
+                    className="ml-auto text-[12px] text-orange-600 hover:text-orange-800 flex items-center gap-1"
+                    onClick={() => setSelectedIds(new Set())}
+                  >
+                    <X className="h-3 w-3" /> Clear
+                  </button>
+                </div>
+              )}
+
               {filtered.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-gray-200 bg-white py-20 text-center">
                   <Inbox className="mx-auto h-8 w-8 text-gray-200 mb-3" />
@@ -824,29 +860,62 @@ export function SubmissionsClient() {
                 </div>
               ) : (
                 <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+                  {/* Select-all header row */}
+                  <div className="flex items-center gap-3 px-5 py-2 border-b border-gray-100 bg-gray-50">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all submissions"
+                      checked={selectedIds.size === filtered.length && filtered.length > 0}
+                      ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filtered.length }}
+                      onChange={() => toggleSelectAll(filtered.map(s => s.id))}
+                      className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                    />
+                    <span className="text-[11px] text-gray-400 font-medium uppercase tracking-wide">
+                      {filtered.length} submission{filtered.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
                   {filtered.map((sub, i) => {
                     const cfg = statusConfig[sub.effectiveStatus ?? sub.status] ?? statusConfig.draft
                     const submittedAt = sub.submitted_at
                       ? formatDistanceToNow(new Date(sub.submitted_at), { addSuffix: true })
                       : formatDistanceToNow(new Date(sub.created_at), { addSuffix: true })
+                    const isSelected = selectedIds.has(sub.id)
                     return (
-                      <button key={sub.id} onClick={() => router.push(`/submissions/${sub.id}`)}
-                        className={cn('w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left group',
-                          i < filtered.length - 1 && 'border-b border-gray-50')}>
-                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-[11px] font-semibold text-gray-500">
-                          {(displayName(sub)[0] ?? '?').toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[14px] font-medium text-gray-800 truncate">{displayName(sub)}</p>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-[12px] text-gray-400 truncate">{sub.forms?.name ?? 'Unknown form'}</p>
-                            {(() => { const p = formatPeriod(sub.forms?.settings); return p ? <span className="flex items-center gap-1 text-[10px] font-medium text-orange-600"><Calendar className="h-2.5 w-2.5" />{p}</span> : null })()}
+                      <div
+                        key={sub.id}
+                        className={cn(
+                          'flex items-center gap-3 px-5 py-3.5 transition-colors group',
+                          i < filtered.length - 1 && 'border-b border-gray-50',
+                          isSelected ? 'bg-orange-50' : 'hover:bg-gray-50'
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={`Select submission from ${displayName(sub)}`}
+                          checked={isSelected}
+                          onChange={e => toggleSelect(sub.id, e as unknown as React.MouseEvent)}
+                          onClick={e => e.stopPropagation()}
+                          className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500 flex-shrink-0 cursor-pointer"
+                        />
+                        <button
+                          onClick={() => router.push(`/submissions/${sub.id}`)}
+                          className="flex items-center gap-4 flex-1 min-w-0 text-left"
+                        >
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-[11px] font-semibold text-gray-500">
+                            {(displayName(sub)[0] ?? '?').toUpperCase()}
                           </div>
-                        </div>
-                        <span className="text-[12px] text-gray-400 flex-shrink-0">{submittedAt}</span>
-                        <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium flex-shrink-0', cfg.className)}>{cfg.label}</span>
-                        <ChevronRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-gray-400 flex-shrink-0" />
-                      </button>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[14px] font-medium text-gray-800 truncate">{displayName(sub)}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-[12px] text-gray-400 truncate">{sub.forms?.name ?? 'Unknown form'}</p>
+                              {(() => { const p = formatPeriod(sub.forms?.settings); return p ? <span className="flex items-center gap-1 text-[10px] font-medium text-orange-600"><Calendar className="h-2.5 w-2.5" />{p}</span> : null })()}
+                            </div>
+                          </div>
+                          <span className="text-[12px] text-gray-400 flex-shrink-0">{submittedAt}</span>
+                          <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium flex-shrink-0', cfg.className)}>{cfg.label}</span>
+                          <ChevronRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-gray-400 flex-shrink-0" />
+                        </button>
+                      </div>
                     )
                   })}
                 </div>
@@ -859,34 +928,39 @@ export function SubmissionsClient() {
         </>
       )}
 
-      {/* Bulk reassign dialog */}
-      <Dialog open={bulkReassignOpen} onOpenChange={o => { setBulkReassignOpen(o); if (!o) { setBulkFrom(''); setBulkTo('') } }}>
-        <DialogContent className="sm:max-w-md">
+      {/* Bulk assign dialog */}
+      <Dialog open={bulkAssignOpen} onOpenChange={o => { setBulkAssignOpen(o); if (!o) setBulkAssignEmail('') }}>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Reassign submissions</DialogTitle>
-            <p className="text-[13px] text-muted-foreground mt-1">Move all submissions from one email to another.</p>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-orange-500" />
+              Assign {selectedIds.size} submission{selectedIds.size !== 1 ? 's' : ''}
+            </DialogTitle>
+            <p className="text-[13px] text-muted-foreground mt-1">
+              Enter the contact email to assign these submissions to.
+            </p>
           </DialogHeader>
-          <div className="py-2 space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-gray-700">From (current email)</label>
-              <Input type="email" placeholder="retiring@email.com" value={bulkFrom} onChange={e => setBulkFrom(e.target.value)} className="h-9 text-[13px]" autoFocus />
-              {bulkFrom.trim() && (() => {
-                const count = submissions.filter(s => s.respondent_email === bulkFrom.trim()).length
-                return count > 0
-                  ? <p className="text-[11px] text-orange-600">{count} submission{count !== 1 ? 's' : ''} will be reassigned</p>
-                  : <p className="text-[11px] text-gray-400">No submissions found for this email</p>
-              })()}
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-gray-700">To (new email)</label>
-              <Input type="email" placeholder="successor@email.com" value={bulkTo} onChange={e => setBulkTo(e.target.value)} className="h-9 text-[13px]" />
-            </div>
+          <div className="py-2 space-y-1.5">
+            <label htmlFor="bulk-assign-email" className="text-[13px] font-medium text-gray-700">Contact email</label>
+            <Input
+              id="bulk-assign-email"
+              type="email"
+              placeholder="contact@example.com"
+              value={bulkAssignEmail}
+              onChange={e => setBulkAssignEmail(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleBulkAssign() }}
+              className="h-9 text-[13px]"
+              autoFocus
+            />
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setBulkReassignOpen(false)} disabled={bulkBusy}>Cancel</Button>
-            <Button onClick={handleBulkReassign} className="bg-orange-600 hover:bg-orange-700"
-              disabled={bulkBusy || !bulkFrom.trim() || !bulkTo.trim() || bulkFrom.trim() === bulkTo.trim()}>
-              {bulkBusy ? 'Reassigning…' : 'Reassign all'}
+            <Button variant="ghost" onClick={() => setBulkAssignOpen(false)} disabled={bulkAssignBusy}>Cancel</Button>
+            <Button
+              onClick={handleBulkAssign}
+              className="bg-orange-600 hover:bg-orange-700 gap-1.5"
+              disabled={bulkAssignBusy || !bulkAssignEmail.trim()}
+            >
+              {bulkAssignBusy ? 'Assigning…' : `Assign ${selectedIds.size}`}
             </Button>
           </DialogFooter>
         </DialogContent>
