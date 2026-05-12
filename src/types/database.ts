@@ -307,6 +307,34 @@ export type Database = {
           },
         ]
       }
+      respondent_groups: {
+        Row: {
+          id: string
+          program_id: string
+          name: string
+          emails: string[]
+          created_by: string
+          created_by_email: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          program_id: string
+          name: string
+          emails: string[]
+          created_by: string
+          created_by_email?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          name?: string
+          emails?: string[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       saved_visualizations: {
         Row: {
           id: string

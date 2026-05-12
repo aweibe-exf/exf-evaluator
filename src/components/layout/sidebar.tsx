@@ -69,6 +69,7 @@ const navItems: NavItem[] = [
 const settingsItems: NavItem[] = [
   { label: 'Program Settings', href: '/settings/program', icon: Settings, roles: ['super_admin', 'program_admin'] },
   { label: 'Users & Roles', href: '/settings/users', icon: Users, roles: ['super_admin', 'program_admin'] },
+  { label: 'Respondent Groups', href: '/settings/groups', icon: Users, roles: ['super_admin', 'program_admin'] },
   { label: 'Import Data', href: '/settings/import', icon: Upload, roles: ['super_admin', 'program_admin'] },
   { label: 'Email Templates', href: '/settings/integrations', icon: Plug, roles: ['super_admin', 'program_admin'] },
   { label: 'Award Context', href: '/settings/narratives', icon: BookOpen, roles: ['super_admin', 'program_admin'] },
