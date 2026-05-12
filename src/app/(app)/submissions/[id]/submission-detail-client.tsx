@@ -27,6 +27,7 @@ interface Submission {
 interface Props {
   submission: Submission
   schema: FormSchema | null
+  currentRole: string | null
 }
 
 const statusConfig: Record<Status, { label: string; className: string }> = {
@@ -117,7 +118,8 @@ function EditControl({
   }
 }
 
-export function SubmissionDetailClient({ submission: initial, schema }: Props) {
+export function SubmissionDetailClient({ submission: initial, schema, currentRole }: Props) {
+  const canEdit = currentRole === 'super_admin' || currentRole === 'program_admin'
   const router = useRouter()
   const [submission, setSubmission] = useState(initial)
   const [updating, setUpdating] = useState(false)
@@ -404,15 +406,7 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-3.5 border-b border-gray-50 flex items-center justify-between">
           <h2 className="text-[13px] font-semibold text-gray-600 uppercase tracking-wider">Responses</h2>
-          {!editing ? (
-            <Button
-              variant="ghost" size="sm"
-              className="gap-1.5 text-[12px] h-7 text-gray-400 hover:text-gray-700"
-              onClick={startEditing}
-            >
-              <Pencil className="h-3 w-3" aria-hidden="true" /> Edit
-            </Button>
-          ) : (
+          {editing ? (
             <div className="flex items-center gap-1.5">
               <Button
                 variant="ghost" size="sm"
@@ -430,7 +424,15 @@ export function SubmissionDetailClient({ submission: initial, schema }: Props) {
                 {savingEdit ? 'Saving…' : 'Save changes'}
               </Button>
             </div>
-          )}
+          ) : canEdit ? (
+            <Button
+              variant="ghost" size="sm"
+              className="gap-1.5 text-[12px] h-7 text-gray-400 hover:text-gray-700"
+              onClick={startEditing}
+            >
+              <Pencil className="h-3 w-3" aria-hidden="true" /> Edit responses
+            </Button>
+          ) : null}
         </div>
         <dl className="divide-y divide-gray-50">
           {displayFields.length === 0 && (

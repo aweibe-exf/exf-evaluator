@@ -17,6 +17,20 @@ export default async function SubmissionDetailPage({ params }: { params: Promise
 
   if (!raw) notFound()
 
+  const programId = (raw.forms as { program_id?: string } | null)?.program_id
+
+  // Resolve the current user's role for this program
+  let currentRole: string | null = null
+  if (programId) {
+    const { data: membership } = await supabase
+      .from('program_memberships')
+      .select('role')
+      .eq('program_id', programId)
+      .eq('user_id', user.id)
+      .single()
+    currentRole = membership?.role ?? null
+  }
+
   const schema = raw.forms?.schema as unknown as FormSchema | null
   const meta = ((raw.metadata ?? {}) as Record<string, unknown>)
   const effectiveStatus = meta.flagged ? 'flagged' : raw.status
@@ -25,6 +39,7 @@ export default async function SubmissionDetailPage({ params }: { params: Promise
     <SubmissionDetailClient
       submission={{ ...(raw as unknown as Parameters<typeof SubmissionDetailClient>[0]['submission']), effectiveStatus: effectiveStatus as 'draft' | 'submitted' | 'reviewed' | 'flagged' }}
       schema={schema}
+      currentRole={currentRole}
     />
   )
 }

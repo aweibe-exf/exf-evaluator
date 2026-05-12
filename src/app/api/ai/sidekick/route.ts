@@ -197,7 +197,7 @@ export async function POST(request: Request) {
     .from('forms')
     .select('id, name, schema, settings')
     .eq('program_id', program_id)
-    .eq('status', 'active')
+    .in('status', ['active', 'closed'])   // include closed forms — submissions still matter
     .order('created_at', { ascending: true })
 
   const forms: FormMeta[] = (rawForms ?? []).map(f => ({

@@ -52,16 +52,26 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   if (!submissionCheck) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const programId = (submissionCheck.forms as { program_id: string } | null)?.program_id
+
   if (programId) {
-    const { count: memberCount } = await supabase
+    const { data: membership } = await supabase
       .from('program_memberships')
-      .select('*', { count: 'exact', head: true })
+      .select('role')
       .eq('program_id', programId)
       .eq('user_id', user.id)
-      .in('role', ['super_admin', 'program_admin', 'staff'])
+      .single()
 
-    if ((memberCount ?? 0) === 0) {
+    const role = membership?.role ?? null
+    const isAdmin = role === 'super_admin' || role === 'program_admin'
+    const isStaff = role === 'staff'
+
+    if (!isAdmin && !isStaff) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Editing response data or reassigning is admin-only
+    if ((newData !== undefined || respondent_email !== undefined) && !isAdmin) {
+      return NextResponse.json({ error: 'Only program admins can edit submission data' }, { status: 403 })
     }
   }
 
