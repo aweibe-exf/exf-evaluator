@@ -776,6 +776,7 @@ export function FormsListClient() {
                             )}
                           </div>
                           <span className="text-[12px] text-gray-400 flex-shrink-0 hidden sm:block">
+                            {form.author_email && <span className="mr-2">{form.author_email.split('@')[0]}</span>}
                             Updated {formatDistanceToNow(new Date(form.updated_at), { addSuffix: true })}
                           </span>
                           <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium flex-shrink-0', cfg.className)}>

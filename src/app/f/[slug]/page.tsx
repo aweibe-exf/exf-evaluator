@@ -4,17 +4,14 @@ import type { FormSchema } from '@/types/forms'
 
 interface Props {
   params: Promise<{ slug: string }>
-  searchParams: Promise<{ token?: string }>
+  searchParams: Promise<{ token?: string; preview?: string }>
 }
 
 export default async function PublicFormPage({ params, searchParams }: Props) {
   const { slug } = await params
-  const { token } = await searchParams
+  const { token, preview } = await searchParams
+  const isPreview = preview === 'true'
   const service = createServiceClient()
-
-  if (!token) {
-    return <ErrorPage message="No access token provided. Please use the link from your invitation email." />
-  }
 
   // Load form by slug
   const { data: form } = await service
@@ -23,7 +20,40 @@ export default async function PublicFormPage({ params, searchParams }: Props) {
     .eq('slug', slug)
     .single()
 
-  if (!form || form.status !== 'active') {
+  if (!form) {
+    return <ErrorPage message="This form could not be found." />
+  }
+
+  const program = form.programs as { name: string; brand_color: string | null } | null
+  const schema = form.schema as unknown as FormSchema
+  const settings = (form.settings as Record<string, unknown> | null) ?? {}
+
+  // Preview mode: show the form read-only, no token required, no submissions
+  if (isPreview) {
+    return (
+      <FormRenderer
+        formId={form.id}
+        formName={form.name}
+        schema={schema}
+        token=""
+        tokenId=""
+        tokenMetadata={{}}
+        respondentEmail={null}
+        programName={program?.name ?? 'Extension Foundation'}
+        brandColor={program?.brand_color ?? '#ea580c'}
+        confirmationMessage={settings.confirmation_message as string | undefined}
+        redirectUrl={undefined}
+        isPreview
+      />
+    )
+  }
+
+  // Normal token-gated mode
+  if (!token) {
+    return <ErrorPage message="No access token provided. Please use the link from your invitation email." />
+  }
+
+  if (form.status !== 'active') {
     return <ErrorPage message="This form is not currently available." />
   }
 
@@ -38,9 +68,6 @@ export default async function PublicFormPage({ params, searchParams }: Props) {
   if (!tokenRow) return <ErrorPage message="Invalid or expired link. Please contact the sender." />
   if (tokenRow.used_at) return <ErrorPage message="This link has already been used. Each link can only be used once." />
   if (new Date(tokenRow.expires_at) < new Date()) return <ErrorPage message="This link has expired. Please contact the sender for a new one." />
-
-  const program = form.programs as { name: string; brand_color: string | null } | null
-  const schema = form.schema as unknown as FormSchema
 
   // Check for an existing draft so we can pre-fill on return
   const { data: existingDraft } = await service
@@ -62,8 +89,8 @@ export default async function PublicFormPage({ params, searchParams }: Props) {
       respondentEmail={tokenRow.email}
       programName={program?.name ?? 'Extension Foundation'}
       brandColor={program?.brand_color ?? '#ea580c'}
-      confirmationMessage={(form.settings as Record<string, unknown> | null)?.confirmation_message as string | undefined}
-      redirectUrl={(form.settings as Record<string, unknown> | null)?.redirect_url as string | undefined}
+      confirmationMessage={settings.confirmation_message as string | undefined}
+      redirectUrl={settings.redirect_url as string | undefined}
       draftId={existingDraft?.id ?? undefined}
       draftData={(existingDraft?.data ?? undefined) as Record<string, unknown> | undefined}
     />

@@ -112,6 +112,37 @@ function PreviewField({ field }: { field: FormField }) {
           ))}
         </div>
       )}
+      {field.type === 'matrix' && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[13px]" role="grid" aria-label={field.label}>
+            <thead>
+              <tr>
+                <th className="text-left pb-2 text-gray-400 font-normal w-1/3" />
+                {(field.matrixColumns ?? []).map(col => (
+                  <th key={col.id} className="pb-2 text-gray-600 font-medium text-center px-2 text-[12px]">{col.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(field.matrixRows ?? []).map(row => (
+                <tr key={row.id} className="border-t border-gray-100">
+                  <td className="py-2.5 pr-4 text-gray-700">{row.label}</td>
+                  {(field.matrixColumns ?? []).map(col => (
+                    <td key={col.id} className="py-2.5 text-center px-2">
+                      <input
+                        type={field.matrixType === 'checkbox' ? 'checkbox' : 'radio'}
+                        name={`preview-matrix-${field.id}-${row.id}`}
+                        className="h-4 w-4 text-orange-600 border-gray-300 focus:ring-orange-500"
+                        disabled
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       {field.type === 'file_upload' && (
         <div className="rounded-lg border-2 border-dashed border-gray-200 p-6 text-center">
           <p className="text-[14px] text-gray-400">Click to upload or drag & drop</p>

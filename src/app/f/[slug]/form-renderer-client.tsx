@@ -17,7 +17,7 @@ interface Props {
   token: string
   tokenId: string
   tokenMetadata: Record<string, unknown>
-  respondentEmail?: string
+  respondentEmail?: string | null
   programName: string
   brandColor: string
   confirmationMessage?: string
@@ -26,6 +26,8 @@ interface Props {
   draftId?: string
   /** Pre-filled data from the saved draft */
   draftData?: Record<string, unknown>
+  /** When true, renders the form read-only with a preview banner — no submissions accepted */
+  isPreview?: boolean
 }
 
 type RendererMode = 'filling' | 'delegated' | 'returned' | 'collaboration' | 'submitted' | 'collaborator-done'
@@ -293,7 +295,7 @@ function deriveMode(meta: Record<string, unknown>): RendererMode {
 export function FormRenderer({
   formId, formName, schema, token, tokenId, tokenMetadata,
   respondentEmail, programName, brandColor, confirmationMessage, redirectUrl,
-  draftId: initialDraftId, draftData,
+  draftId: initialDraftId, draftData, isPreview,
 }: Props) {
   const initialMode = deriveMode(tokenMetadata)
 
@@ -553,6 +555,16 @@ export function FormRenderer({
         )}
       </header>
 
+      {/* Preview mode banner */}
+      {isPreview && (
+        <div className="bg-amber-50 border-b border-amber-200">
+          <div className="max-w-2xl mx-auto px-6 py-2.5 flex items-center gap-2">
+            <svg className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+            <p className="text-[13px] text-amber-700 font-medium">Preview mode — responses will not be recorded</p>
+          </div>
+        </div>
+      )}
+
       {/* Draft restored banner */}
       {restoredFromDraft && (
         <div className="bg-sky-50 border-b border-sky-100">
@@ -680,8 +692,15 @@ export function FormRenderer({
                 </div>
               )}
               {isLastPage ? (
-                <Button type="submit" disabled={submitting} aria-busy={submitting} className="px-8" style={{ backgroundColor: brandColor }}>
-                  {submitting ? 'Submitting…' : submitLabel}
+                <Button
+                  type={isPreview ? 'button' : 'submit'}
+                  disabled={submitting || isPreview}
+                  aria-busy={submitting}
+                  className="px-8"
+                  style={{ backgroundColor: brandColor, opacity: isPreview ? 0.5 : 1 }}
+                  title={isPreview ? 'Submissions are disabled in preview mode' : undefined}
+                >
+                  {submitting ? 'Submitting…' : isPreview ? 'Submit (preview only)' : submitLabel}
                 </Button>
               ) : (
                 <Button type="button" onClick={handleNext} style={{ backgroundColor: brandColor }}>Next →</Button>

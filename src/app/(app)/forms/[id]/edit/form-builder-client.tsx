@@ -370,34 +370,32 @@ export function FormBuilderClient({ initialForm }: Props) {
         {/* Center: Canvas */}
         <div className="flex flex-1 flex-col overflow-hidden bg-[#f7f7f8]">
           {/* Page navigator */}
-          {schema.pages.length > 1 && (
-            <nav
-              className="flex items-center gap-1.5 border-b bg-white px-4 py-2 overflow-x-auto"
-              aria-label="Form pages"
-            >
-              {schema.pages.map((page, i) => (
-                <button
-                  key={page.id}
-                  onClick={() => { setCurrentPageIndex(i); setSelectedFieldId(null) }}
-                  className={`flex-shrink-0 rounded-md px-3 py-1 text-[12px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
-                    i === currentPageIndex
-                      ? 'bg-gray-900 text-white'
-                      : 'text-gray-500 hover:bg-gray-100'
-                  }`}
-                  aria-current={i === currentPageIndex ? 'page' : undefined}
-                >
-                  {page.title}
-                </button>
-              ))}
+          <nav
+            className="flex items-center gap-1.5 border-b bg-white px-4 py-2 overflow-x-auto"
+            aria-label="Form pages"
+          >
+            {schema.pages.map((page, i) => (
               <button
-                onClick={addPage}
-                className="flex-shrink-0 rounded-md px-3 py-1 text-[12px] text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
-                aria-label="Add new page"
+                key={page.id}
+                onClick={() => { setCurrentPageIndex(i); setSelectedFieldId(null) }}
+                className={`flex-shrink-0 rounded-md px-3 py-1 text-[12px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
+                  i === currentPageIndex
+                    ? 'bg-gray-900 text-white'
+                    : 'text-gray-500 hover:bg-gray-100'
+                }`}
+                aria-current={i === currentPageIndex ? 'page' : undefined}
               >
-                + Add page
+                {page.title}
               </button>
-            </nav>
-          )}
+            ))}
+            <button
+              onClick={addPage}
+              className="flex-shrink-0 rounded-md px-3 py-1 text-[12px] text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+              aria-label="Add new page"
+            >
+              + Add page
+            </button>
+          </nav>
 
           <div className="flex-1 overflow-y-auto">
             <FormCanvas

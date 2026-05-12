@@ -61,7 +61,12 @@ export async function POST(request: Request) {
     if (tpl?.schema) formSchema = tpl.schema as typeof formSchema
   }
 
-  const { data, error } = await service.from('forms').insert({
+  // Fetch author email for display (no auth.users join needed on reads)
+  const { data: userRecord } = await service.auth.admin.getUserById(user.id)
+  const authorEmail = userRecord?.user?.email ?? null
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (service.from('forms') as any).insert({
     name,
     description,
     program_id,
@@ -71,6 +76,7 @@ export async function POST(request: Request) {
     settings: {} as unknown as Json,
     status: 'draft',
     created_by: user.id,
+    author_email: authorEmail,
   }).select().single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

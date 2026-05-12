@@ -331,15 +331,15 @@ export function FormCanvas({
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">
-      {/* Page header */}
-      <div className="mb-6 flex items-center justify-between">
-        <input
-          value={page.title}
-          onChange={e => onUpdatePageTitle(e.target.value)}
-          className="text-[15px] font-semibold text-gray-700 bg-transparent border-none outline-none focus:ring-0 w-full"
-          aria-label="Page title"
-        />
-        {!isOnlyPage && (
+      {/* Page header - only show when multiple pages exist */}
+      {!isOnlyPage && (
+        <div className="mb-6 flex items-center justify-between">
+          <input
+            value={page.title}
+            onChange={e => onUpdatePageTitle(e.target.value)}
+            className="text-[15px] font-semibold text-gray-700 bg-transparent border-none outline-none focus:ring-0 w-full"
+            aria-label="Page title"
+          />
           <button
             onClick={onDeletePage}
             className="ml-2 text-[12px] text-gray-400 hover:text-red-500 transition-colors focus:outline-none focus-visible:underline"
@@ -347,8 +347,8 @@ export function FormCanvas({
           >
             Delete page
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Fields */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

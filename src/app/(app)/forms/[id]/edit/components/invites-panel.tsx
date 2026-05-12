@@ -87,8 +87,8 @@ export function InvitesPanel({ formId, formSlug }: Props) {
   const pending = tokens.filter(t => !t.used_at && !isPast(new Date(t.expires_at)))
   const expired = tokens.filter(t => !t.used_at && isPast(new Date(t.expires_at)))
 
-  const publicUrl = `${APP_URL}/f/${formSlug}`
-  const embedCode = `<iframe src="${publicUrl}" width="100%" height="600" frameborder="0" style="border-radius:8px;border:1px solid #e5e7eb;"></iframe>`
+  const previewUrl = `${APP_URL}/f/${formSlug}?preview=true`
+  const embedCode = `<iframe src="${previewUrl}" width="100%" height="600" frameborder="0" style="border-radius:8px;border:1px solid #e5e7eb;"></iframe>`
 
   function copyText(text: string, label: string) {
     navigator.clipboard.writeText(text)
@@ -101,11 +101,11 @@ export function InvitesPanel({ formId, formSlug }: Props) {
       <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 space-y-2.5">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-400">Share</p>
         <div>
-          <p className="text-[11px] text-gray-500 mb-1 flex items-center gap-1"><Link2 className="h-3 w-3" aria-hidden="true" /> Public link</p>
+          <p className="text-[11px] text-gray-500 mb-1 flex items-center gap-1"><Link2 className="h-3 w-3" aria-hidden="true" /> Preview link <span className="text-gray-400">(read-only, no submissions)</span></p>
           <div className="flex items-center gap-1.5">
-            <code className="flex-1 truncate rounded bg-white border border-gray-200 px-2 py-1 text-[10px] text-gray-600 font-mono">{publicUrl}</code>
+            <code className="flex-1 truncate rounded bg-white border border-gray-200 px-2 py-1 text-[10px] text-gray-600 font-mono">{previewUrl}</code>
             <button
-              onClick={() => copyText(publicUrl, 'Link')}
+              onClick={() => copyText(previewUrl, 'Preview link')}
               className="p-1.5 rounded text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-1 focus-visible:ring-orange-400"
               aria-label="Copy public link"
             >
