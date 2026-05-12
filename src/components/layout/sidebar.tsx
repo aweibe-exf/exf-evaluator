@@ -167,7 +167,7 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
       <div className="mx-3 my-1 border-t border-zinc-800" />
 
       {/* Main nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-0.5">
+      <nav className="no-scrollbar flex-1 overflow-y-auto px-3 py-2 space-y-0.5">
         {navItems.map(item => {
           if (item.children) {
             const isParentActive = pathname.startsWith(item.href)
