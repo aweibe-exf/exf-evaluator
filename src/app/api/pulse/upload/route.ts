@@ -1,21 +1,49 @@
 import { NextResponse } from 'next/server'
+import Anthropic from '@anthropic-ai/sdk'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 
 const BUCKET = 'pulse-note-attachments'
 const MAX_SIZE = 20 * 1024 * 1024 // 20 MB
 const MAX_EXTRACTED_CHARS = 12000  // ~3k tokens — enough for AI context
 
-/** Extract text from a PDF buffer. Dynamic import avoids webpack bundling pdf-parse. */
+const anthropic = new Anthropic()
+
+/**
+ * Extract text from a PDF using Claude's native document understanding.
+ * Much more reliable than pdf-parse in serverless environments, and handles
+ * scanned PDFs, tables, and complex layouts.
+ */
 async function extractPdfText(buffer: Buffer): Promise<string | null> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require('pdf-parse')
-    const fn = typeof pdfParse === 'function' ? pdfParse : pdfParse.default
-    const parsed = await fn(buffer)
-    const raw = (parsed.text as string | undefined)?.replace(/\s+/g, ' ').trim() ?? ''
-    return raw.length > 0 ? raw.slice(0, MAX_EXTRACTED_CHARS) : null
+    const base64 = buffer.toString('base64')
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 4096,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: base64,
+              },
+            } as unknown as Anthropic.TextBlockParam,
+            {
+              type: 'text',
+              text: 'Extract all text content from this PDF document. Output only the raw text, preserving paragraph breaks. Do not add commentary, headings, or formatting beyond what is in the original document.',
+            },
+          ],
+        },
+      ],
+    })
+
+    const text = response.content[0].type === 'text' ? response.content[0].text.trim() : ''
+    return text.length > 0 ? text.slice(0, MAX_EXTRACTED_CHARS) : null
   } catch (err) {
-    console.warn('PDF text extraction failed:', err)
+    console.warn('[upload] PDF text extraction failed:', err)
     return null
   }
 }
@@ -56,7 +84,7 @@ export async function POST(request: Request) {
   const arrayBuffer = await file.arrayBuffer()
   const buffer = Buffer.from(arrayBuffer)
 
-  // Extract text from PDFs (non-fatal if it fails)
+  // Extract text from PDFs using Claude (non-fatal if it fails)
   const extractedText = file.type === 'application/pdf'
     ? await extractPdfText(buffer)
     : null
@@ -69,7 +97,7 @@ export async function POST(request: Request) {
     })
 
   if (uploadError) {
-    console.error('Storage upload error:', uploadError)
+    console.error('[upload] Storage upload error:', uploadError)
     return NextResponse.json({ error: `Upload failed: ${uploadError.message}` }, { status: 500 })
   }
 

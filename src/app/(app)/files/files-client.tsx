@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   FileText, Image, Download, Search, ArrowUpDown,
-  ArrowUp, ArrowDown, FileQuestion, Calendar,
-  User, StickyNote, FolderOpen,
+  ArrowUp, ArrowDown, FileQuestion,
+  User, StickyNote, FolderOpen, RefreshCw,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { formatDistanceToNow, format } from 'date-fns'
 import { cn } from '@/lib/utils'
 
@@ -40,6 +41,7 @@ interface FileRow {
   mimeType: string
   hasText: boolean
   noteId: string
+  attachmentIndex: number
   noteTitle: string | null
   noteDate: string
   authorEmail: string | null
@@ -115,6 +117,7 @@ export function FilesClient() {
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [typeFilter, setTypeFilter] = useState<'all' | 'pdf' | 'image'>('all')
+  const [extracting, setExtracting] = useState<string | null>(null) // file.key
 
   const isAdmin = currentRole && ['super_admin', 'program_admin'].includes(currentRole)
 
@@ -138,6 +141,7 @@ export function FilesClient() {
               mimeType: a.type ?? '',
               hasText: !!a.extracted_text,
               noteId: note.id,
+              attachmentIndex: i,
               noteTitle: note.title,
               noteDate: note.note_date,
               authorEmail: note.author_email,
@@ -181,6 +185,27 @@ export function FilesClient() {
         return sortDir === 'asc' ? cmp : -cmp
       })
   }, [files, search, typeFilter, sortKey, sortDir])
+
+  async function handleReextract(file: FileRow) {
+    setExtracting(file.key)
+    try {
+      const res = await fetch('/api/pulse/reextract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note_id: file.noteId, attachment_index: file.attachmentIndex }),
+      })
+      if (res.ok) {
+        setFiles(prev => prev.map(f => f.key === file.key ? { ...f, hasText: true } : f))
+        toast.success('Text extracted successfully — Sidekick can now read this PDF')
+      } else {
+        const j = await res.json()
+        toast.error(j.error ?? 'Extraction failed')
+      }
+    } catch {
+      toast.error('Network error during extraction')
+    }
+    setExtracting(null)
+  }
 
   if (!isAdmin) {
     return (
@@ -319,8 +344,19 @@ export function FilesClient() {
                 <span className="text-[13px] text-gray-600">{formatBytes(file.size)}</span>
               </div>
 
-              {/* Download */}
-              <div>
+              {/* Actions */}
+              <div className="flex items-center gap-1">
+                {file.mimeType === 'application/pdf' && !file.hasText && (
+                  <button
+                    onClick={() => handleReextract(file)}
+                    disabled={extracting === file.key}
+                    title="Extract text so Sidekick can read this PDF"
+                    className="flex items-center justify-center h-7 w-7 rounded-md text-amber-400 hover:text-amber-600 hover:bg-amber-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:opacity-50"
+                    aria-label={`Extract text from ${file.name}`}
+                  >
+                    <RefreshCw className={cn('h-3.5 w-3.5', extracting === file.key && 'animate-spin')} aria-hidden="true" />
+                  </button>
+                )}
                 <a
                   href={file.url}
                   target="_blank"
