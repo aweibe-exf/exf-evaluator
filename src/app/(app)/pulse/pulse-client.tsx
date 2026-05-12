@@ -263,6 +263,8 @@ export function PulseClient() {
   const [hasSpeech, setHasSpeech] = useState(false)
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
   const interimRef = useRef('')
+  const baseContentRef = useRef('')   // content that existed before recording started
+  const finalTranscriptRef = useRef('') // all finals accumulated during this session
 
   // File upload
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -325,6 +327,9 @@ export function PulseClient() {
       return
     }
     setVoiceError('')
+    // Snapshot the existing text and reset the running transcript
+    baseContentRef.current = content
+    finalTranscriptRef.current = ''
     interimRef.current = ''
 
     const rec = new SpeechRecognition()
@@ -332,21 +337,25 @@ export function PulseClient() {
     rec.interimResults = true
     rec.lang = 'en-US'
 
-    const baseContent = content
-
     rec.onresult = (e: SpeechRecognitionEvent) => {
+      // Only process results starting from e.resultIndex (the new ones this event)
       let interim = ''
-      let final = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript
         if (e.results[i].isFinal) {
-          final += t
+          // Accumulate finals in a ref so earlier sentences aren't lost
+          finalTranscriptRef.current += (finalTranscriptRef.current ? ' ' : '') + t.trim()
         } else {
           interim = t
         }
       }
       interimRef.current = interim
-      setContent(baseContent + (baseContent && final ? ' ' : '') + final + interim)
+
+      // Rebuild full content: original text + all finals so far + current interim
+      const base = baseContentRef.current
+      const finals = finalTranscriptRef.current
+      const separator = base && finals ? ' ' : ''
+      setContent(base + separator + finals + (finals && interim ? ' ' : '') + interim)
     }
 
     rec.onerror = (e: SpeechRecognitionErrorEvent) => {
