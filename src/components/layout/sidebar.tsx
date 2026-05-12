@@ -21,6 +21,7 @@ import {
   Check,
   ScrollText,
   Sparkles,
+  BookMarked,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -68,6 +69,7 @@ const settingsItems: NavItem[] = [
   { label: 'Email Templates', href: '/settings/integrations', icon: Plug, roles: ['super_admin', 'program_admin'] },
   { label: 'Award Context', href: '/settings/narratives', icon: BookOpen, roles: ['super_admin', 'program_admin'] },
   { label: 'Audit Log', href: '/settings/audit', icon: ScrollText, roles: ['super_admin', 'program_admin'] },
+  { label: 'User Guide', href: '/guide', icon: BookMarked, roles: ['super_admin', 'program_admin'] },
 ]
 
 function NavLink({ href, icon: Icon, label, exact = false }: {

@@ -42,6 +42,7 @@ import {
   X,
   Tag,
   BookOpen,
+  LayoutTemplate,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -130,6 +131,14 @@ export function FormsListClient() {
   const [templateName, setTemplateName] = useState('')
   const [templateDesc, setTemplateDesc] = useState('')
   const [templateBusy, setTemplateBusy] = useState(false)
+
+  // Use template picker
+  type TemplateRow = { id: string; name: string; description: string | null; updated_at: string }
+  const [pickingTemplate, setPickingTemplate] = useState(false)
+  const [templateList, setTemplateList] = useState<TemplateRow[]>([])
+  const [templateSearch, setTemplateSearch] = useState('')
+  const [templateLoading, setTemplateLoading] = useState(false)
+  const [usingTemplate, setUsingTemplate] = useState<string | null>(null)
 
   // Rename folder
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null)
@@ -226,6 +235,38 @@ export function FormsListClient() {
       setTemplateDesc('')
     } else {
       toast.error('Failed to save template')
+    }
+  }
+
+  async function openTemplatePicker() {
+    setPickingTemplate(true)
+    setTemplateSearch('')
+    if (templateList.length > 0) return // already loaded
+    setTemplateLoading(true)
+    const res = await fetch(`/api/templates?program_id=${currentProgram?.id ?? ''}`)
+    if (res.ok) setTemplateList(await res.json())
+    setTemplateLoading(false)
+  }
+
+  async function handleUseTemplate(template: TemplateRow) {
+    if (!currentProgram) return
+    setUsingTemplate(template.id)
+    const res = await fetch('/api/forms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: template.name,
+        program_id: currentProgram.id,
+        template_id: template.id,
+      }),
+    })
+    if (res.ok) {
+      const form = await res.json()
+      toast.success('Form created from template')
+      router.push(`/forms/${form.id}/edit`)
+    } else {
+      toast.error('Failed to create form from template')
+      setUsingTemplate(null)
     }
   }
 
@@ -483,9 +524,14 @@ export function FormsListClient() {
             </Button>
           )}
           {canEdit && (
-            <Button onClick={() => setCreating(true)} className="bg-orange-600 hover:bg-orange-700 h-9 gap-1.5 text-[13px]">
-              <Plus className="h-4 w-4" aria-hidden="true" /> New form
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={openTemplatePicker} className="h-9 gap-1.5 text-[13px]">
+                <LayoutTemplate className="h-4 w-4" aria-hidden="true" /> From template
+              </Button>
+              <Button onClick={() => setCreating(true)} className="bg-orange-600 hover:bg-orange-700 h-9 gap-1.5 text-[13px]">
+                <Plus className="h-4 w-4" aria-hidden="true" /> New form
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -1190,6 +1236,71 @@ export function FormsListClient() {
             <Button type="submit" form="save-template-form" className="bg-orange-600 hover:bg-orange-700" disabled={templateBusy || !templateName.trim()} aria-busy={templateBusy}>
               {templateBusy ? 'Saving…' : 'Save template'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Use template picker dialog */}
+      <Dialog open={pickingTemplate} onOpenChange={o => { setPickingTemplate(o); if (!o) setTemplateSearch('') }}>
+        <DialogContent className="sm:max-w-lg" aria-describedby="pick-template-desc">
+          <DialogHeader>
+            <DialogTitle>Start from a template</DialogTitle>
+            <p id="pick-template-desc" className="text-[13px] text-muted-foreground mt-1">
+              Choose a template to pre-fill your form structure. You can customize it freely after.
+            </p>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+              <Input
+                placeholder="Search templates…"
+                value={templateSearch}
+                onChange={e => setTemplateSearch(e.target.value)}
+                className="h-9 text-[13px] pl-8"
+                autoFocus
+              />
+            </div>
+            <div className="max-h-[340px] overflow-y-auto space-y-1 rounded-lg border border-gray-100 p-1">
+              {templateLoading ? (
+                <div className="space-y-1 p-2">{[...Array(4)].map((_, i) => <div key={i} className="h-14 rounded-lg bg-gray-100 animate-pulse" />)}</div>
+              ) : templateList.length === 0 ? (
+                <div className="py-12 text-center">
+                  <LayoutTemplate className="mx-auto h-8 w-8 text-gray-200 mb-2" />
+                  <p className="text-[13px] text-gray-400">No templates yet.</p>
+                  <p className="text-[12px] text-gray-400 mt-0.5">Save a form as a template or create one under Forms → Templates.</p>
+                </div>
+              ) : (() => {
+                const filtered = templateList.filter(t =>
+                  !templateSearch || t.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+                  (t.description ?? '').toLowerCase().includes(templateSearch.toLowerCase())
+                )
+                if (!filtered.length) return (
+                  <p className="py-8 text-center text-[13px] text-gray-400">No templates match &ldquo;{templateSearch}&rdquo;</p>
+                )
+                return filtered.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => handleUseTemplate(t)}
+                    disabled={usingTemplate !== null}
+                    className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-orange-50 hover:border-orange-200 border border-transparent transition-colors group disabled:opacity-50"
+                  >
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-orange-50 group-hover:bg-orange-100 transition-colors">
+                      <LayoutTemplate className="h-4 w-4 text-orange-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-medium text-gray-800 truncate">{t.name}</p>
+                      {t.description && <p className="text-[11px] text-gray-400 truncate">{t.description}</p>}
+                    </div>
+                    <span className="text-[11px] text-orange-600 font-medium flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {usingTemplate === t.id ? 'Creating…' : 'Use →'}
+                    </span>
+                  </button>
+                ))
+              })()}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPickingTemplate(false)}>Cancel</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
