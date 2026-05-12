@@ -306,6 +306,13 @@ export function PulseClient() {
   const [editContent, setEditContent] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editSaving, setEditSaving] = useState(false)
+  const [editAttachments, setEditAttachments] = useState<Attachment[]>([])
+  const [editUploading, setEditUploading] = useState(false)
+  const [editGdocUrl, setEditGdocUrl] = useState('')
+  const [editGdocLoading, setEditGdocLoading] = useState(false)
+  const [editGdocError, setEditGdocError] = useState('')
+  const [editGdocOpen, setEditGdocOpen] = useState(false)
+  const editFileInputRef = useRef<HTMLInputElement>(null)
 
   // ---------------------------------------------------------------------------
   // Load notes + current user
@@ -528,6 +535,51 @@ export function PulseClient() {
     setEditTitle(note.title ?? '')
     setEditContent(note.content)
     setEditDate(note.note_date)
+    setEditAttachments(note.attachments ?? [])
+    setEditGdocUrl('')
+    setEditGdocError('')
+  }
+
+  async function handleEditFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length || !currentProgram) return
+    setEditUploading(true)
+    const results: Attachment[] = []
+    for (const file of files) {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('program_id', currentProgram.id)
+      try {
+        const res = await fetch('/api/pulse/upload', { method: 'POST', body: fd })
+        const json = await res.json()
+        if (res.ok) results.push(json)
+      } catch { /* non-fatal */ }
+    }
+    setEditAttachments(prev => [...prev, ...results])
+    setEditUploading(false)
+    if (editFileInputRef.current) editFileInputRef.current.value = ''
+  }
+
+  async function handleEditGdocImport() {
+    if (!editGdocUrl.trim()) return
+    setEditGdocLoading(true)
+    setEditGdocError('')
+    try {
+      const res = await fetch('/api/pulse/import-gdoc', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: editGdocUrl.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setEditGdocError(json.error ?? 'Failed to import'); return }
+      setEditContent(prev => prev ? `${prev}\n\n${json.content}` : json.content)
+      setEditGdocOpen(false)
+      setEditGdocUrl('')
+    } catch {
+      setEditGdocError('Network error — please try again')
+    } finally {
+      setEditGdocLoading(false)
+    }
   }
 
   async function handleEditSave() {
@@ -536,7 +588,12 @@ export function PulseClient() {
     const res = await fetch(`/api/pulse/${editNote.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: editTitle.trim() || null, content: editContent.trim(), note_date: editDate }),
+      body: JSON.stringify({
+        title: editTitle.trim() || null,
+        content: editContent.trim(),
+        note_date: editDate,
+        attachments: editAttachments,
+      }),
     })
     if (res.ok) {
       const updated = await res.json()
@@ -834,33 +891,109 @@ export function PulseClient() {
           <DialogHeader>
             <DialogTitle>Edit Note</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 pt-2">
-            <div>
-              <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">
-                Title <span className="text-zinc-400 font-normal">(optional)</span>
-              </Label>
-              <Input type="text" placeholder="e.g. Site visit — Westside"
-                value={editTitle} onChange={e => setEditTitle(e.target.value)}
-                className="text-sm h-8" maxLength={200} />
-            </div>
-            <div>
-              <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Note date</Label>
-              <div className="relative">
-                <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
-                <Input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
-                  className="pl-8 text-sm h-8" />
+          <div className="space-y-3 pt-2 max-h-[80vh] overflow-y-auto pr-1">
+            {/* Title + Date row */}
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">
+                  Title <span className="text-zinc-400 font-normal">(optional)</span>
+                </Label>
+                <Input type="text" placeholder="e.g. Site visit — Westside"
+                  value={editTitle} onChange={e => setEditTitle(e.target.value)}
+                  className="text-sm h-8" maxLength={200} />
+              </div>
+              <div className="flex-shrink-0">
+                <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Date</Label>
+                <div className="relative">
+                  <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+                  <Input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
+                    className="pl-7 text-sm h-8 w-[140px]" />
+                </div>
               </div>
             </div>
-            <Textarea value={editContent} onChange={e => setEditContent(e.target.value)}
-              className="min-h-[200px] resize-none text-sm" />
+
+            {/* Content */}
+            <div>
+              <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Note</Label>
+              <Textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+                className="min-h-[160px] resize-none text-sm" />
+            </div>
+
+            {/* Tools row */}
+            <div className="flex items-center gap-2">
+              <button type="button"
+                onClick={() => { setEditGdocOpen(true); setEditGdocError('') }}
+                className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors">
+                <Link2 className="h-3.5 w-3.5" />Google Doc
+              </button>
+              <button type="button"
+                onClick={() => editFileInputRef.current?.click()}
+                disabled={editUploading}
+                className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 transition-colors disabled:opacity-50">
+                {editUploading
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Paperclip className="h-3.5 w-3.5" />}
+                {editUploading ? 'Uploading…' : 'Attach file'}
+              </button>
+              <input ref={editFileInputRef} type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.gif,.webp" multiple
+                className="hidden" onChange={handleEditFileChange} />
+            </div>
+
+            {/* Attachments */}
+            {editAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {editAttachments.map((a, i) => (
+                  <AttachmentChip key={i} attachment={a}
+                    onRemove={() => setEditAttachments(prev => prev.filter((_, j) => j !== i))} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
+            <Button variant="ghost" size="sm" onClick={() => setEditNote(null)}>
+              <X className="mr-1.5 h-3.5 w-3.5" />Cancel
+            </Button>
+            <Button size="sm" onClick={handleEditSave} disabled={editSaving || !editContent.trim()}
+              className="bg-orange-600 hover:bg-orange-700 text-white">
+              {editSaving
+                ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                : <Check className="mr-1.5 h-3.5 w-3.5" />}
+              Save changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit: Google Doc import dialog ── */}
+      <Dialog open={editGdocOpen} onOpenChange={open => { setEditGdocOpen(open); if (!open) { setEditGdocUrl(''); setEditGdocError('') } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import from Google Docs</DialogTitle>
+            <DialogDescription>
+              Text will be appended to your note.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2">
+            <Input type="url" placeholder="https://docs.google.com/document/d/…"
+              value={editGdocUrl} onChange={e => setEditGdocUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleEditGdocImport() }} autoFocus />
+            {editGdocError && (
+              <div className="flex items-start gap-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                <span>{editGdocError}</span>
+              </div>
+            )}
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setEditNote(null)}>
-                <X className="mr-1.5 h-3.5 w-3.5" />Cancel
+              <Button variant="ghost" size="sm" onClick={() => { setEditGdocOpen(false); setEditGdocUrl(''); setEditGdocError('') }}>
+                Cancel
               </Button>
-              <Button size="sm" onClick={handleEditSave} disabled={editSaving || !editContent.trim()}
+              <Button size="sm" onClick={handleEditGdocImport}
+                disabled={editGdocLoading || !editGdocUrl.trim()}
                 className="bg-orange-600 hover:bg-orange-700 text-white">
-                {editSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Check className="mr-1.5 h-3.5 w-3.5" />}
-                Save changes
+                {editGdocLoading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}Import
               </Button>
             </div>
           </div>
