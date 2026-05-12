@@ -96,6 +96,7 @@ function FieldInput({ field, value, onChange }: {
     return null
   }
 
+  const helpId = field.helpText ? `${id}-help` : undefined
   const label = (
     <label htmlFor={id} className="block text-[14px] font-medium text-gray-800 mb-1.5">
       {field.label}
@@ -103,7 +104,9 @@ function FieldInput({ field, value, onChange }: {
       {field.required && <span className="sr-only"> (required)</span>}
     </label>
   )
-  const help = field.helpText ? <p className="text-[12px] text-gray-400 mt-1">{field.helpText}</p> : null
+  const help = field.helpText
+    ? <p id={helpId} className="text-[13px] text-gray-500 mt-1">{field.helpText}</p>
+    : null
 
   switch (field.type) {
     case 'short_text':
@@ -114,7 +117,7 @@ function FieldInput({ field, value, onChange }: {
       return (
         <div>
           {label}
-          <input id={id} type={typeMap[field.type] ?? 'text'} value={strVal} onChange={e => onChange(e.target.value)} placeholder={field.placeholder} required={field.required} aria-required={field.required} className={`${base} h-10`} />
+          <input id={id} type={typeMap[field.type] ?? 'text'} value={strVal} onChange={e => onChange(e.target.value)} placeholder={field.placeholder} required={field.required} aria-required={field.required} aria-describedby={helpId} className={`${base} h-10`} />
           {help}
         </div>
       )
@@ -123,7 +126,7 @@ function FieldInput({ field, value, onChange }: {
       return (
         <div>
           {label}
-          <textarea id={id} value={strVal} onChange={e => onChange(e.target.value)} placeholder={field.placeholder} required={field.required} aria-required={field.required} rows={4} className={`${base} py-2 resize-none`} />
+          <textarea id={id} value={strVal} onChange={e => onChange(e.target.value)} placeholder={field.placeholder} required={field.required} aria-required={field.required} aria-describedby={helpId} rows={4} className={`${base} py-2 resize-none`} />
           {help}
         </div>
       )
@@ -131,7 +134,7 @@ function FieldInput({ field, value, onChange }: {
       return (
         <div>
           {label}
-          <input id={id} type="date" value={strVal} onChange={e => onChange(e.target.value)} required={field.required} aria-required={field.required} className={`${base} h-10`} />
+          <input id={id} type="date" value={strVal} onChange={e => onChange(e.target.value)} required={field.required} aria-required={field.required} aria-describedby={helpId} className={`${base} h-10`} />
           {help}
         </div>
       )

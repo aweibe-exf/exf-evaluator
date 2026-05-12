@@ -126,9 +126,10 @@ function MessageBubble({ message }: { message: Message }) {
         isUser ? 'bg-orange-100' : 'bg-gradient-to-br from-orange-500 to-orange-600'
       )}>
         {isUser
-          ? <User className="h-3.5 w-3.5 text-orange-600" />
-          : <Sparkles className="h-3.5 w-3.5 text-white" />
+          ? <User className="h-3.5 w-3.5 text-orange-600" aria-hidden="true" />
+          : <Sparkles className="h-3.5 w-3.5 text-white" aria-hidden="true" />
         }
+      <span className="sr-only">{isUser ? 'You' : 'Sidekick'}</span>
       </div>
 
       {/* Bubble */}
@@ -144,10 +145,10 @@ function MessageBubble({ message }: { message: Message }) {
           <div>
             {renderMarkdown(message.content)}
             {message.streaming && (
-              <span className="inline-flex gap-0.5 ml-1 align-middle">
-                <span className="w-1 h-1 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1 h-1 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1 h-1 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+              <span className="inline-flex gap-0.5 ml-1 align-middle" role="status" aria-label="Sidekick is responding">
+                <span aria-hidden="true" className="w-1 h-1 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span aria-hidden="true" className="w-1 h-1 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span aria-hidden="true" className="w-1 h-1 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '300ms' }} />
               </span>
             )}
           </div>
@@ -276,8 +277,8 @@ export function SidekickClient() {
         )}
       </header>
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      {/* Messages area — aria-live so screen readers announce new messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-6" role="log" aria-label="Conversation" aria-live="polite" aria-atomic="false">
         <div className="mx-auto max-w-2xl space-y-5">
 
           {isEmpty ? (

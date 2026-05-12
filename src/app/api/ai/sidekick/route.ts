@@ -177,129 +177,140 @@ You are not a generic chatbot. Only discuss program evaluation topics — redire
 // ---------------------------------------------------------------------------
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const service = createServiceClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  try {
+    const supabase = await createClient()
+    const service = createServiceClient()
 
-  const body = await request.json()
-  const parsed = schema.safeParse(body)
-  if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { program_id, messages } = parsed.data
+    const body = await request.json()
+    const parsed = schema.safeParse(body)
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
 
-  // Fetch program
-  const { data: program } = await supabase.from('programs').select('name').eq('id', program_id).single()
-  if (!program) return NextResponse.json({ error: 'Program not found' }, { status: 404 })
+    const { program_id, messages } = parsed.data
 
-  // Fetch all active forms for the program
-  const { data: rawForms } = await supabase
-    .from('forms')
-    .select('id, name, schema, settings')
-    .eq('program_id', program_id)
-    .in('status', ['active', 'closed'])   // include closed forms — submissions still matter
-    .order('created_at', { ascending: true })
+    // Fetch program
+    const { data: program, error: programError } = await supabase
+      .from('programs').select('name').eq('id', program_id).single()
+    if (programError || !program) return NextResponse.json({ error: 'Program not found' }, { status: 404 })
 
-  const forms: FormMeta[] = (rawForms ?? []).map(f => ({
-    id: f.id,
-    name: f.name,
-    fields: ((f.schema as FormSchema | null)?.pages ?? []).flatMap(p => p.fields),
-    settings: (f.settings ?? {}) as Record<string, unknown>,
-  }))
+    // Fetch all active/closed forms for the program
+    const { data: rawForms } = await supabase
+      .from('forms')
+      .select('id, name, schema, settings')
+      .eq('program_id', program_id)
+      .in('status', ['active', 'closed'])
+      .order('created_at', { ascending: true })
 
-  // Fetch all submissions for the program (cap at 2000 for performance)
-  const formIds = forms.map(f => f.id)
-  let submissions: SubmissionRow[] = []
-  if (formIds.length > 0) {
-    const { data: rawSubs } = await service
-      .from('submissions')
-      .select('id, form_id, submitted_at, data')
-      .in('form_id', formIds)
-      .eq('status', 'submitted')
-      .order('submitted_at', { ascending: true })
-      .limit(2000)
-    submissions = (rawSubs ?? []).map(s => ({
-      id: s.id,
-      form_id: s.form_id,
-      submitted_at: s.submitted_at,
-      data: s.data as Record<string, unknown>,
+    const forms: FormMeta[] = (rawForms ?? []).map(f => ({
+      id: f.id,
+      name: f.name,
+      fields: ((f.schema as FormSchema | null)?.pages ?? []).flatMap(p => p.fields),
+      settings: (f.settings ?? {}) as Record<string, unknown>,
     }))
-  }
 
-  const context = buildContext(program.name, forms, submissions)
+    // Fetch submissions (cap at 2000)
+    const formIds = forms.map(f => f.id)
+    let submissions: SubmissionRow[] = []
+    if (formIds.length > 0) {
+      const { data: rawSubs } = await service
+        .from('submissions')
+        .select('id, form_id, submitted_at, data')
+        .in('form_id', formIds)
+        .eq('status', 'submitted')
+        .order('submitted_at', { ascending: true })
+        .limit(2000)
+      submissions = (rawSubs ?? []).map(s => ({
+        id: s.id,
+        form_id: s.form_id,
+        submitted_at: s.submitted_at,
+        data: s.data as Record<string, unknown>,
+      }))
+    }
 
-  // Fetch Pulse notes visible to this user (RLS handles staff vs admin visibility)
-  const { data: rawPulse } = await supabase
-    .from('pulse_notes')
-    .select('title, content, source, note_date, author_email, attachments')
-    .eq('program_id', program_id)
-    .order('note_date', { ascending: false })
-    .limit(200)
+    const context = buildContext(program.name, forms, submissions)
 
-  const pulseSection = (rawPulse && rawPulse.length > 0)
-    ? `\n\nPULSE FIELD NOTES (${rawPulse.length} entries):\n` +
-      rawPulse.map(p => {
-        const author = p.author_email ?? 'unknown'
-        const src = p.source ?? 'typed'
-        const heading = p.title ? `[${p.note_date}] "${p.title}" (${src}, by ${author})` : `[${p.note_date}] (${src}, by ${author})`
-        const body = String(p.content).slice(0, 1200)
-        // Include extracted attachment text if present
-        const attachments = (p.attachments as Array<{ name?: string; extracted_text?: string | null }> | null) ?? []
-        const attachText = attachments
-          .filter(a => a.extracted_text)
-          .map(a => `  [ATTACHMENT FULL TEXT — "${a.name ?? 'file'}"]\n${String(a.extracted_text).slice(0, 10000)}\n  [END ATTACHMENT]`)
-          .join('\n')
-        return attachText ? `${heading}\nNote: ${body}\n${attachText}` : `${heading}: ${body}`
-      }).join('\n\n')
-    : ''
+    // Fetch Pulse notes
+    const { data: rawPulse } = await supabase
+      .from('pulse_notes')
+      .select('title, content, source, note_date, author_email, attachments')
+      .eq('program_id', program_id)
+      .order('note_date', { ascending: false })
+      .limit(100)
 
-  // Inject context as first user message preamble (invisible to user)
-  const contextMessage: Anthropic.MessageParam = {
-    role: 'user',
-    content: `[DATA CONTEXT — use this to answer questions]\n\n${context}${pulseSection}\n\n[END DATA CONTEXT]`,
-  }
-  const contextAck: Anthropic.MessageParam = {
-    role: 'assistant',
-    content: `Got it — I have the program data loaded and I'm ready to help you explore it. What would you like to know?`,
-  }
+    const pulseSection = (rawPulse && rawPulse.length > 0)
+      ? `\n\nPULSE FIELD NOTES (${rawPulse.length} entries):\n` +
+        rawPulse.map(p => {
+          const author = p.author_email ?? 'unknown'
+          const src = p.source ?? 'typed'
+          const heading = p.title
+            ? `[${p.note_date}] "${p.title}" (${src}, by ${author})`
+            : `[${p.note_date}] (${src}, by ${author})`
+          const noteBody = String(p.content ?? '').slice(0, 1200)
+          const attachments = (p.attachments as Array<{ name?: string; extracted_text?: string | null }> | null) ?? []
+          const attachText = attachments
+            .filter(a => a.extracted_text)
+            .map(a => `  [ATTACHMENT: "${a.name ?? 'file'}"]\n${String(a.extracted_text).slice(0, 5000)}\n  [END]`)
+            .join('\n')
+          return attachText ? `${heading}\nNote: ${noteBody}\n${attachText}` : `${heading}: ${noteBody}`
+        }).join('\n\n')
+      : ''
 
-  const anthropicMessages: Anthropic.MessageParam[] = [
-    contextMessage,
-    contextAck,
-    ...messages.map(m => ({ role: m.role, content: m.content })),
-  ]
+    // Inject context as first user message preamble
+    const contextMessage: Anthropic.MessageParam = {
+      role: 'user',
+      content: `[DATA CONTEXT — use this to answer questions]\n\n${context}${pulseSection}\n\n[END DATA CONTEXT]`,
+    }
+    const contextAck: Anthropic.MessageParam = {
+      role: 'assistant',
+      content: `Got it — I have the program data loaded and I'm ready to help you explore it. What would you like to know?`,
+    }
 
-  // Stream back the response
-  const encoder = new TextEncoder()
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        const anthropicStream = await client.messages.stream({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1500,
-          system: SYSTEM_PROMPT,
-          messages: anthropicMessages,
-        })
+    // Filter out any messages with empty content to avoid API errors
+    const validMessages = messages.filter(m => m.content.trim().length > 0)
 
-        for await (const chunk of anthropicStream) {
-          if (
-            chunk.type === 'content_block_delta' &&
-            chunk.delta.type === 'text_delta'
-          ) {
-            controller.enqueue(encoder.encode(chunk.delta.text))
-          }
+    const anthropicMessages: Anthropic.MessageParam[] = [
+      contextMessage,
+      contextAck,
+      ...validMessages.map(m => ({ role: m.role, content: m.content })),
+    ]
+
+    // Stream back the response using event callbacks (more reliable on serverless)
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          await client.messages
+            .stream({
+              model: 'claude-sonnet-4-5',
+              max_tokens: 2048,
+              system: SYSTEM_PROMPT,
+              messages: anthropicMessages,
+            })
+            .on('text', (text) => {
+              controller.enqueue(encoder.encode(text))
+            })
+            .finalMessage()
+          controller.close()
+        } catch (err) {
+          console.error('[sidekick] Anthropic stream error:', err)
+          controller.error(err)
         }
-        controller.close()
-      } catch (err) {
-        controller.error(err)
-      }
-    },
-  })
+      },
+    })
 
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'X-Content-Type-Options': 'nosniff',
-    },
-  })
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
+  } catch (err) {
+    console.error('[sidekick] Route error:', err)
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Internal server error' },
+      { status: 500 }
+    )
+  }
 }

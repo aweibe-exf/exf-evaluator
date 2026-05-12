@@ -702,7 +702,7 @@ export function PulseClient() {
                 Attach
               </button>
               <input ref={fileInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp"
-                multiple className="hidden" onChange={handleFileChange} />
+                multiple className="hidden" onChange={handleFileChange} aria-label="Attach files (PDF, images)" />
             </div>
 
             {attachments.length > 0 && (
@@ -937,7 +937,7 @@ export function PulseClient() {
               </button>
               <input ref={editFileInputRef} type="file"
                 accept=".pdf,.png,.jpg,.jpeg,.gif,.webp" multiple
-                className="hidden" onChange={handleEditFileChange} />
+                className="hidden" onChange={handleEditFileChange} aria-label="Attach files (PDF, images)" />
             </div>
 
             {/* Attachments */}

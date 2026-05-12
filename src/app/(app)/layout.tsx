@@ -21,9 +21,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <ProgramProvider>
+      {/* Skip to main content — WCAG 2.4.1 */}
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="flex h-screen overflow-hidden bg-[#f7f7f8]">
         <Sidebar userEmail={user.email} />
-        <main className="flex-1 overflow-y-auto">
+        <main id="main-content" className="flex-1 overflow-y-auto" tabIndex={-1}>
           {children}
         </main>
       </div>

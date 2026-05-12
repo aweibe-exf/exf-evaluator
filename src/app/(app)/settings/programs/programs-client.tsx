@@ -150,8 +150,8 @@ export function ProgramsClient() {
               />
             </div>
             <div>
-              <label className="text-[13px] font-medium text-gray-700 block mb-1.5">Brand color</label>
-              <input type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)} className="h-8 w-14 rounded border border-gray-200 cursor-pointer" />
+              <label htmlFor="prog-brand-color" className="text-[13px] font-medium text-gray-700 block mb-1.5">Brand color</label>
+              <input id="prog-brand-color" type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)} className="h-8 w-14 rounded border border-gray-200 cursor-pointer" aria-label="Brand color" />
             </div>
           </form>
           <DialogFooter>
