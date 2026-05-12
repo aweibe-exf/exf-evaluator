@@ -248,11 +248,13 @@ export async function POST(request: Request) {
             ? `[${p.note_date}] "${p.title}" (${src}, by ${author})`
             : `[${p.note_date}] (${src}, by ${author})`
           const noteBody = String(p.content ?? '').slice(0, 1200)
-          const attachments = (p.attachments as Array<{ name?: string; extracted_text?: string | null }> | null) ?? []
-          const attachText = attachments
-            .filter(a => a.extracted_text)
-            .map(a => `  [ATTACHMENT: "${a.name ?? 'file'}"]\n${String(a.extracted_text).slice(0, 5000)}\n  [END]`)
-            .join('\n')
+          const attachments = (p.attachments as Array<{ name?: string; type?: string; extracted_text?: string | null }> | null) ?? []
+          const attachText = attachments.map(a => {
+            if (a.extracted_text) {
+              return `  [ATTACHMENT — "${a.name ?? 'file'}"]\n${String(a.extracted_text).slice(0, 8000)}\n  [END ATTACHMENT]`
+            }
+            return `  [ATTACHMENT — "${a.name ?? 'file'}" (${a.type ?? 'file'}, no text content)]`
+          }).join('\n')
           return attachText ? `${heading}\nNote: ${noteBody}\n${attachText}` : `${heading}: ${noteBody}`
         }).join('\n\n')
       : ''

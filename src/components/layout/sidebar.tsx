@@ -24,6 +24,7 @@ import {
   BookMarked,
   Radio,
   PieChart,
+  Paperclip,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -64,6 +65,7 @@ const navItems: NavItem[] = [
   { label: 'Evaluation Sidekick', href: '/sidekick', icon: Sparkles },
   { label: 'Data Visualizer', href: '/visualizer', icon: PieChart },
   { label: 'Pulse', href: '/pulse', icon: Radio },
+  { label: 'Files', href: '/files', icon: Paperclip },
 ]
 
 const settingsItems: NavItem[] = [

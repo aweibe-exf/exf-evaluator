@@ -194,12 +194,15 @@ export async function POST(request: Request) {
     ? `\n\nPULSE FIELD NOTES (${pulseNotes.length} entries from ${date_from} to ${date_to}):\nThese are qualitative observations recorded by program staff in the field. Incorporate relevant insights where they support or enrich the analysis.\n\n` +
       pulseNotes.map(p => {
         const heading = p.title ? `[${p.note_date}] "${p.title}"` : `[${p.note_date}]`
-        const body = String(p.content).slice(0, 500)
-        const attachments = (p.attachments as Array<{ name?: string; extracted_text?: string | null }> | null) ?? []
-        const attachText = attachments
-          .filter(a => a.extracted_text)
-          .map(a => `  [Attachment: ${a.name ?? 'file'}]\n  ${String(a.extracted_text).slice(0, 800)}`)
-          .join('\n')
+        const body = String(p.content ?? '').slice(0, 3000)
+        const attachments = (p.attachments as Array<{ name?: string; type?: string; extracted_text?: string | null }> | null) ?? []
+        const attachText = attachments.map(a => {
+          if (a.extracted_text) {
+            return `  [ATTACHMENT — "${a.name ?? 'file'}"]\n${String(a.extracted_text).slice(0, 8000)}\n  [END ATTACHMENT]`
+          }
+          // Image or unextractable file — note its presence
+          return `  [ATTACHMENT — "${a.name ?? 'file'}" (${a.type ?? 'file'}, no text content)]`
+        }).join('\n')
         return attachText ? `${heading}: ${body}\n${attachText}` : `${heading}: ${body}`
       }).join('\n\n')
     : ''
