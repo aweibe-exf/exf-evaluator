@@ -425,14 +425,22 @@ export function PulseClient() {
     const files = Array.from(e.target.files ?? [])
     if (!files.length || !currentProgram) return
     setUploading(true)
+    setComposeError('')
     const results: Attachment[] = []
     for (const file of files) {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('program_id', currentProgram.id)
-      const res = await fetch('/api/pulse/upload', { method: 'POST', body: fd })
-      if (res.ok) {
-        results.push(await res.json())
+      try {
+        const res = await fetch('/api/pulse/upload', { method: 'POST', body: fd })
+        const json = await res.json()
+        if (res.ok) {
+          results.push(json)
+        } else {
+          setComposeError(json.error ?? 'File upload failed')
+        }
+      } catch {
+        setComposeError('Network error during upload — please try again')
       }
     }
     setAttachments(prev => [...prev, ...results])

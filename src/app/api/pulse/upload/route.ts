@@ -1,14 +1,24 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import * as pdfParseModule from 'pdf-parse'
-// pdf-parse exports vary by bundler; support both default and named export
-const pdfParse: (buf: Buffer) => Promise<{ text: string }> =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (pdfParseModule as any).default ?? pdfParseModule
 
 const BUCKET = 'pulse-note-attachments'
 const MAX_SIZE = 20 * 1024 * 1024 // 20 MB
 const MAX_EXTRACTED_CHARS = 12000  // ~3k tokens — enough for AI context
+
+/** Extract text from a PDF buffer. Dynamic import avoids webpack bundling pdf-parse. */
+async function extractPdfText(buffer: Buffer): Promise<string | null> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pdfParse = require('pdf-parse')
+    const fn = typeof pdfParse === 'function' ? pdfParse : pdfParse.default
+    const parsed = await fn(buffer)
+    const raw = (parsed.text as string | undefined)?.replace(/\s+/g, ' ').trim() ?? ''
+    return raw.length > 0 ? raw.slice(0, MAX_EXTRACTED_CHARS) : null
+  } catch (err) {
+    console.warn('PDF text extraction failed:', err)
+    return null
+  }
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -44,33 +54,23 @@ export async function POST(request: Request) {
   const fileName = `${user.id}/${programId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
 
   const arrayBuffer = await file.arrayBuffer()
+  const buffer = Buffer.from(arrayBuffer)
 
-  // Extract text from PDFs before uploading
-  let extractedText: string | null = null
-  if (file.type === 'application/pdf') {
-    try {
-      const buffer = Buffer.from(arrayBuffer)
-      const parsed = await pdfParse(buffer)
-      const raw = parsed.text?.replace(/\s+/g, ' ').trim() ?? ''
-      if (raw.length > 0) {
-        extractedText = raw.slice(0, MAX_EXTRACTED_CHARS)
-      }
-    } catch (err) {
-      // Non-fatal — upload still succeeds, AI just won't have the text
-      console.warn('PDF text extraction failed:', err)
-    }
-  }
+  // Extract text from PDFs (non-fatal if it fails)
+  const extractedText = file.type === 'application/pdf'
+    ? await extractPdfText(buffer)
+    : null
 
   const { error: uploadError } = await service.storage
     .from(BUCKET)
-    .upload(fileName, arrayBuffer, {
+    .upload(fileName, buffer, {
       contentType: file.type,
       upsert: false,
     })
 
   if (uploadError) {
     console.error('Storage upload error:', uploadError)
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
+    return NextResponse.json({ error: `Upload failed: ${uploadError.message}` }, { status: 500 })
   }
 
   const { data: { publicUrl } } = service.storage.from(BUCKET).getPublicUrl(fileName)
