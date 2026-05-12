@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import Typography from '@tiptap/extension-typography'
 import { toast } from 'sonner'
@@ -11,9 +12,17 @@ import { Button } from '@/components/ui/button'
 import {
   ArrowLeft, Save, Sparkles, Bold, Italic, List, ListOrdered,
   Heading2, Heading3, Quote, Minus, Calendar, CheckSquare, Square,
-  Download, CheckCircle2, RotateCcw,
+  Download, CheckCircle2, RotateCcw, BarChart2, ChevronDown, ChevronUp,
+  ImagePlus, Loader2,
 } from 'lucide-react'
 import { format, subDays } from 'date-fns'
+import {
+  BarChart, Bar, LineChart, Line, AreaChart, Area,
+  PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer,
+} from 'recharts'
+import { createRoot } from 'react-dom/client'
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
   AlignmentType, BorderStyle, ShadingType,
@@ -21,6 +30,122 @@ import {
 } from 'docx'
 import type { Database } from '@/types/database'
 import type { FormSettings } from '@/types/forms'
+
+// ---------------------------------------------------------------------------
+// Saved visualization types + chart renderer
+// ---------------------------------------------------------------------------
+
+interface ChartConfig {
+  title: string
+  description: string
+  chart_type: 'bar' | 'line' | 'area' | 'pie'
+  data: Record<string, unknown>[]
+  x_key: string
+  y_keys: string[]
+  x_label?: string
+  y_label?: string
+  series_labels?: Record<string, string>
+}
+
+interface SavedViz {
+  id: string
+  title: string
+  description: string | null
+  prompt: string
+  config: ChartConfig
+  created_by_email: string | null
+  created_at: string
+}
+
+const CHART_COLORS = ['#f97316','#3b82f6','#22c55e','#a855f7','#f43f5e','#eab308','#06b6d4','#ec4899']
+
+function StaticChart({ config }: { config: ChartConfig }) {
+  const seriesLabel = (k: string) => config.series_labels?.[k] ?? k
+  const tooltip = { contentStyle: { backgroundColor: '#fff', border: '1px solid #e4e4e7', borderRadius: 6, fontSize: 12 } }
+  const common = { data: config.data, margin: { top: 10, right: 20, left: 0, bottom: 5 } }
+  const xAxis = <XAxis dataKey={config.x_key} tick={{ fontSize: 11, fill: '#52525b' }} />
+  const yAxis = <YAxis tick={{ fontSize: 11, fill: '#52525b' }} />
+
+  if (config.chart_type === 'pie') {
+    return (
+      <PieChart width={560} height={300}>
+        <Pie data={config.data} dataKey={config.y_keys[0]} nameKey={config.x_key} cx="50%" cy="50%" outerRadius={110}
+          label={({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}>
+          {config.data.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+        </Pie>
+        <Tooltip {...tooltip} /><Legend />
+      </PieChart>
+    )
+  }
+  if (config.chart_type === 'line') {
+    return (
+      <LineChart width={560} height={300} {...common}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />{xAxis}{yAxis}
+        <Tooltip {...tooltip} /><Legend />
+        {config.y_keys.map((k, i) => <Line key={k} type="monotone" dataKey={k} name={seriesLabel(k)} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2} dot={{ r: 3 }} />)}
+      </LineChart>
+    )
+  }
+  if (config.chart_type === 'area') {
+    return (
+      <AreaChart width={560} height={300} {...common}>
+        <defs>{config.y_keys.map((k, i) => <linearGradient key={k} id={`rg-${i}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.2} /><stop offset="95%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.02} /></linearGradient>)}</defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />{xAxis}{yAxis}
+        <Tooltip {...tooltip} /><Legend />
+        {config.y_keys.map((k, i) => <Area key={k} type="monotone" dataKey={k} name={seriesLabel(k)} stroke={CHART_COLORS[i % CHART_COLORS.length]} fill={`url(#rg-${i})`} strokeWidth={2} />)}
+      </AreaChart>
+    )
+  }
+  return (
+    <BarChart width={560} height={300} {...common}>
+      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />{xAxis}{yAxis}
+      <Tooltip {...tooltip} /><Legend />
+      {config.y_keys.map((k, i) => <Bar key={k} dataKey={k} name={seriesLabel(k)} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[3,3,0,0]} />)}
+    </BarChart>
+  )
+}
+
+/** Renders a chart off-screen and returns a PNG data URL */
+async function chartToPng(config: ChartConfig): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const container = document.createElement('div')
+    container.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:560px;height:300px;background:#fff;'
+    document.body.appendChild(container)
+
+    const root = createRoot(container)
+    root.render(<StaticChart config={config} />)
+
+    // Give Recharts time to render
+    setTimeout(async () => {
+      try {
+        const svg = container.querySelector('svg')
+        if (!svg) throw new Error('No SVG found')
+        const svgStr = new XMLSerializer().serializeToString(svg)
+        const img = new window.Image()
+        const blob = new Blob([svgStr], { type: 'image/svg+xml' })
+        const url = URL.createObjectURL(blob)
+        img.src = url
+        await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej })
+        const canvas = document.createElement('canvas')
+        canvas.width = 560 * 2
+        canvas.height = 300 * 2
+        const ctx = canvas.getContext('2d')!
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.scale(2, 2)
+        ctx.drawImage(img, 0, 0)
+        URL.revokeObjectURL(url)
+        const dataUrl = canvas.toDataURL('image/png')
+        resolve(dataUrl)
+      } catch (e) {
+        reject(e)
+      } finally {
+        root.unmount()
+        document.body.removeChild(container)
+      }
+    }, 400)
+  })
+}
 
 // ---------------------------------------------------------------------------
 // HTML → docx conversion
@@ -287,11 +412,42 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
 
   const periods = derivePeriods(forms)
 
+  // Saved visualizations
+  const [savedVizs, setSavedVizs] = useState<SavedViz[]>([])
+  const [vizPanelOpen, setVizPanelOpen] = useState(true)
+  const [insertingVizId, setInsertingVizId] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch(`/api/visualizations?program_id=${initialReport.program_id}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setSavedVizs(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [initialReport.program_id])
+
+  async function insertChart(viz: SavedViz) {
+    setInsertingVizId(viz.id)
+    try {
+      const png = await chartToPng(viz.config)
+      const html = `<figure style="margin:1.5em 0;text-align:center;">
+        <img src="${png}" alt="${viz.title}" style="max-width:100%;border-radius:8px;border:1px solid #e4e4e7;" />
+        <figcaption style="font-size:12px;color:#71717a;margin-top:6px;">${viz.title}${viz.description ? ` — ${viz.description}` : ''}</figcaption>
+      </figure>`
+      editor?.chain().focus().insertContentAt(editor.state.doc.content.size, html).run()
+      setDirty(true)
+      toast.success(`"${viz.title}" inserted into report`)
+    } catch {
+      toast.error('Failed to render chart — try again')
+    } finally {
+      setInsertingVizId(null)
+    }
+  }
+
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const editor = useEditor({
     extensions: [
       StarterKit,
+      Image.configure({ inline: false, allowBase64: true }),
       Placeholder.configure({ placeholder: 'Start writing your report, or use AI to generate a section…' }),
       Typography,
     ],
@@ -635,6 +791,53 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
                 Analyzing submissions and writing content…
               </p>
             )}
+
+            {/* ── Saved Charts ── */}
+            <div className="border-t border-gray-100 pt-4">
+              <button
+                type="button"
+                onClick={() => setVizPanelOpen(v => !v)}
+                className="flex w-full items-center justify-between text-[12px] font-medium text-gray-600 hover:text-gray-900 mb-2"
+              >
+                <span className="flex items-center gap-1.5">
+                  <BarChart2 className="h-3.5 w-3.5 text-orange-500" />
+                  Saved Charts
+                </span>
+                {vizPanelOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </button>
+
+              {vizPanelOpen && (
+                savedVizs.length === 0 ? (
+                  <p className="text-[11px] text-gray-400 italic">
+                    No saved charts yet. Generate and save charts in the Data Visualizer.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {savedVizs.map(viz => (
+                      <div key={viz.id} className="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-2">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium text-gray-800 truncate">{viz.title}</p>
+                          <p className="text-[10px] text-gray-400 capitalize">{viz.config.chart_type} chart</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-[10px] flex-shrink-0 gap-1"
+                          disabled={insertingVizId === viz.id}
+                          onClick={() => insertChart(viz)}
+                        >
+                          {insertingVizId === viz.id
+                            ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                            : <ImagePlus className="h-2.5 w-2.5" />
+                          }
+                          {insertingVizId === viz.id ? '…' : 'Insert'}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
           </div>
         </aside>
       </div>
