@@ -171,9 +171,9 @@ function NoteCard({
           <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-600">
             {sourceLabel[note.source] ?? note.source}
           </span>
-          {isAdmin && note.author_email && !isOwn && (
-            <span className="text-[11px] text-zinc-400">{note.author_email}</span>
-          )}
+          <span className="text-[11px] text-zinc-400">
+            {isOwn ? 'You' : (note.author_email ?? 'Unknown')}
+          </span>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {canEdit && (
