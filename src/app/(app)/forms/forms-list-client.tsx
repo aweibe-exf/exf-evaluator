@@ -43,6 +43,7 @@ import {
   Tag,
   BookOpen,
   LayoutTemplate,
+  UserRound,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -775,10 +776,16 @@ export function FormsListClient() {
                               <p className="text-[12px] text-gray-400 truncate mt-0.5">{form.description}</p>
                             )}
                           </div>
-                          <span className="text-[12px] text-gray-400 flex-shrink-0 hidden sm:block">
-                            {form.author_email && <span className="mr-2">{form.author_email.split('@')[0]}</span>}
-                            Updated {formatDistanceToNow(new Date(form.updated_at), { addSuffix: true })}
-                          </span>
+                          <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
+                            <span className="flex items-center gap-1 text-[12px] text-gray-400">
+                              <UserRound className="h-3 w-3 text-gray-300" aria-hidden="true" />
+                              {form.author_email ? form.author_email.split('@')[0] : <span className="text-gray-300">—</span>}
+                            </span>
+                            <span className="text-gray-200">·</span>
+                            <span className="text-[12px] text-gray-400">
+                              Updated {formatDistanceToNow(new Date(form.updated_at), { addSuffix: true })}
+                            </span>
+                          </div>
                           <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium flex-shrink-0', cfg.className)}>
                             {cfg.label}
                           </span>
