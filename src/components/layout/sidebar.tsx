@@ -20,6 +20,7 @@ import {
   ChevronsUpDown,
   Check,
   ScrollText,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -57,6 +58,7 @@ const navItems: NavItem[] = [
   { label: 'Submissions', href: '/submissions', icon: Inbox },
   { label: 'Reports', href: '/reports', icon: FileBarChart2 },
   { label: 'Impact Dashboard', href: '/impact', icon: BarChart3 },
+  { label: 'Evaluation Sidekick', href: '/sidekick', icon: Sparkles },
 ]
 
 const settingsItems: NavItem[] = [
