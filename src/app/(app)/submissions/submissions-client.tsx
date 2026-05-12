@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { useProgram } from '@/contexts/program-context'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -15,8 +14,8 @@ import {
 } from '@/components/ui/dialog'
 import {
   Search, Inbox, ChevronRight, Download, UserRoundCog,
-  List, Table2, UserSearch, Loader2, ChevronDown, Calendar,
-  FileText, CheckCircle2, Clock,
+  List, Table2, UserSearch, ChevronDown, Calendar,
+  FileText, CheckCircle2, Clock, UserPlus, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatDistanceToNow } from 'date-fns'
@@ -51,33 +50,29 @@ function formatPeriod(settings: FormSettings | null | undefined): string | null 
   const { periodType, periodValue, periodStart, periodEnd } = settings
   if (periodType === 'month' && periodValue) {
     const [year, month] = periodValue.split('-')
-    const d = new Date(Number(year), Number(month) - 1, 1)
-    return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   }
   if (periodType === 'quarter' && periodValue) return periodValue
   if (periodStart && periodEnd) {
-    const fmt = (iso: string) => {
-      const [y, m, d] = iso.split('-')
-      return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    }
+    const fmt = (iso: string) => { const [y,m,d] = iso.split('-'); return new Date(Number(y),Number(m)-1,Number(d)).toLocaleDateString('en-US',{month:'short',day:'numeric'}) }
     return `${fmt(periodStart)} – ${fmt(periodEnd)}`
   }
   if (periodValue) return periodValue
   return null
 }
 
+function isImported(sub: Submission): boolean {
+  return !sub.respondent_email && !!((sub.metadata ?? {}) as Record<string, unknown>).importedRow
+}
+
 function displayName(sub: Submission): string {
-  if (!sub.respondent_email) {
-    const meta = (sub.metadata ?? {}) as Record<string, unknown>
-    return meta.importedRow ? 'Imported' : 'Anonymous'
-  }
+  if (!sub.respondent_email) return isImported(sub) ? 'Imported' : 'Anonymous'
   return sub.respondent_email
 }
 
 function escCsv(v: unknown): string {
   const s = Array.isArray(v) ? v.join('; ') : String(v ?? '')
-  return s.includes(',') || s.includes('"') || s.includes('\n')
-    ? `"${s.replace(/"/g, '""')}"` : s
+  return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
 }
 
 type StatusFilter = 'all' | 'submitted' | 'reviewed' | 'flagged' | 'draft'
@@ -98,16 +93,117 @@ const filterButtons: { key: StatusFilter; label: string }[] = [
 ]
 
 // ---------------------------------------------------------------------------
+// Submission detail dialog (used in Table View)
+// ---------------------------------------------------------------------------
+
+function SubmissionDetailDialog({
+  sub, fields, onClose, onAssigned,
+}: {
+  sub: Submission
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fields: any[]
+  onClose: () => void
+  onAssigned: (id: string, email: string) => void
+}) {
+  const data = (sub.data ?? {}) as Record<string, unknown>
+  const cfg = statusConfig[sub.status] ?? statusConfig.draft
+  const needsAssign = !sub.respondent_email
+  const [assignEmail, setAssignEmail] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [showAssign, setShowAssign] = useState(false)
+
+  async function handleAssign() {
+    if (!assignEmail.trim()) return
+    setAssigning(true)
+    const res = await fetch(`/api/submissions/${sub.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ respondent_email: assignEmail.trim().toLowerCase() }),
+    })
+    setAssigning(false)
+    if (res.ok) {
+      toast.success(`Assigned to ${assignEmail.trim()}`)
+      onAssigned(sub.id, assignEmail.trim().toLowerCase())
+      onClose()
+    } else {
+      toast.error('Failed to assign — do you have admin access?')
+    }
+  }
+
+  return (
+    <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 pr-6">
+          <span>{sub.respondent_email ?? (isImported(sub) ? 'Imported record' : 'Anonymous')}</span>
+          <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-medium', cfg.className)}>{cfg.label}</span>
+        </DialogTitle>
+        <div className="flex items-center gap-3 text-xs text-zinc-500 mt-1">
+          <span>{sub.forms?.name}</span>
+          {sub.submitted_at && <span>· {new Date(sub.submitted_at).toLocaleDateString()}</span>}
+          {(() => { const p = formatPeriod(sub.forms?.settings); return p ? <span className="text-orange-500">· {p}</span> : null })()}
+        </div>
+      </DialogHeader>
+
+      <div className="space-y-3 py-1">
+        {fields.map((f) => {
+          const val = data[f.id]
+          if (val === undefined || val === null || val === '') return null
+          const display = Array.isArray(val) ? val.join(', ') : String(val)
+          return (
+            <div key={f.id} className="rounded-lg bg-zinc-50 px-3 py-2.5">
+              <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide mb-1">{f.label || f.id}</p>
+              <p className="text-sm text-zinc-800 whitespace-pre-wrap leading-relaxed">{display}</p>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="border-t border-zinc-100 pt-3 space-y-2">
+        {needsAssign && !showAssign && (
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowAssign(true)}>
+            <UserPlus className="h-3.5 w-3.5" /> Assign to a contact
+          </Button>
+        )}
+        {needsAssign && showAssign && (
+          <div className="flex gap-2 items-center">
+            <Input
+              type="email"
+              placeholder="contact@example.com"
+              value={assignEmail}
+              onChange={e => setAssignEmail(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAssign() }}
+              className="h-8 text-xs flex-1"
+              autoFocus
+            />
+            <Button size="sm" onClick={handleAssign} disabled={assigning || !assignEmail.trim()}
+              className="h-8 bg-orange-600 hover:bg-orange-700 text-white text-xs">
+              {assigning ? 'Saving…' : 'Assign'}
+            </Button>
+            <button onClick={() => setShowAssign(false)} className="text-zinc-400 hover:text-zinc-600">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        <div className="flex justify-end">
+          <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </DialogContent>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Table View
 // ---------------------------------------------------------------------------
 
-function TableView({ submissions, forms, programId }: {
+function TableView({ submissions, forms, onAssigned }: {
   submissions: Submission[]
   forms: FormRow[]
-  programId: string
+  onAssigned: (id: string, email: string) => void
 }) {
   const [selectedFormId, setSelectedFormId] = useState<string>('')
   const [formOpen, setFormOpen] = useState(false)
+  const [expandedSub, setExpandedSub] = useState<Submission | null>(null)
 
   const selectedForm = forms.find(f => f.id === selectedFormId)
   const formSubmissions = submissions.filter(s => s.form_id === selectedFormId && s.status !== 'draft')
@@ -122,7 +218,8 @@ function TableView({ submissions, forms, programId }: {
 
   function downloadCSV() {
     if (!formSubmissions.length || !fields.length) return
-    const headers = ['Email', 'Submitted', 'Status', ...fields.map((f: { label?: string; id: string }) => f.label || f.id)]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const headers = ['Email', 'Submitted', 'Status', ...fields.map((f: any) => f.label || f.id)]
     const rows = formSubmissions.map(sub => {
       const data = (sub.data ?? {}) as Record<string, unknown>
       return [
@@ -146,29 +243,27 @@ function TableView({ submissions, forms, programId }: {
   return (
     <div className="space-y-4">
       {/* Form picker + export */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="relative">
           <button
             onClick={() => setFormOpen(v => !v)}
             className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm hover:border-zinc-300 transition-colors min-w-[220px]"
           >
-            <FileText className="h-3.5 w-3.5 text-zinc-400" />
-            <span className={cn('flex-1 text-left', selectedForm ? 'text-zinc-900' : 'text-zinc-400')}>
+            <FileText className="h-3.5 w-3.5 text-zinc-400 flex-shrink-0" />
+            <span className={cn('flex-1 text-left truncate', selectedForm ? 'text-zinc-900' : 'text-zinc-400')}>
               {selectedForm ? selectedForm.name : 'Select a form…'}
             </span>
-            <ChevronDown className={cn('h-3.5 w-3.5 text-zinc-400 transition-transform', formOpen && 'rotate-180')} />
+            <ChevronDown className={cn('h-3.5 w-3.5 text-zinc-400 flex-shrink-0 transition-transform', formOpen && 'rotate-180')} />
           </button>
           {formOpen && (
-            <div className="absolute z-50 mt-1 w-full rounded-lg border border-zinc-200 bg-white shadow-lg overflow-hidden">
+            <div className="absolute z-50 mt-1 w-72 rounded-lg border border-zinc-200 bg-white shadow-lg overflow-hidden">
               {forms.filter(f => f.status !== 'draft').map(f => (
-                <button
-                  key={f.id}
+                <button key={f.id}
                   className="flex w-full items-center justify-between px-3 py-2 text-sm text-left hover:bg-zinc-50 transition-colors"
-                  onClick={() => { setSelectedFormId(f.id); setFormOpen(false) }}
-                >
+                  onClick={() => { setSelectedFormId(f.id); setFormOpen(false) }}>
                   <span className="font-medium text-zinc-900 truncate">{f.name}</span>
                   <span className="text-xs text-zinc-400 ml-2 flex-shrink-0">
-                    {submissions.filter(s => s.form_id === f.id && s.status !== 'draft').length} submissions
+                    {submissions.filter(s => s.form_id === f.id && s.status !== 'draft').length} rows
                   </span>
                 </button>
               ))}
@@ -177,19 +272,17 @@ function TableView({ submissions, forms, programId }: {
         </div>
 
         {selectedFormId && formSubmissions.length > 0 && (
-          <Button variant="outline" size="sm" onClick={downloadCSV} className="gap-1.5">
-            <Download className="h-3.5 w-3.5" /> Export CSV
-          </Button>
-        )}
-
-        {selectedFormId && formSubmissions.length > 0 && (
-          <span className="text-xs text-zinc-400">
-            {formSubmissions.length} submission{formSubmissions.length !== 1 ? 's' : ''}
-          </span>
+          <>
+            <Button variant="outline" size="sm" onClick={downloadCSV} className="gap-1.5">
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </Button>
+            <span className="text-xs text-zinc-400">
+              {formSubmissions.length} submission{formSubmissions.length !== 1 ? 's' : ''} · click any row to expand
+            </span>
+          </>
         )}
       </div>
 
-      {/* Table */}
       {!selectedFormId ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-white py-20 text-center">
           <Table2 className="h-8 w-8 text-zinc-200 mb-3" />
@@ -203,16 +296,16 @@ function TableView({ submissions, forms, programId }: {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
-          <table className="w-full text-xs">
-            <thead className="bg-zinc-50 border-b border-zinc-200">
-              <tr>
-                <th className="px-3 py-2.5 text-left font-medium text-zinc-500 whitespace-nowrap sticky left-0 bg-zinc-50">Email</th>
-                <th className="px-3 py-2.5 text-left font-medium text-zinc-500 whitespace-nowrap">Submitted</th>
-                <th className="px-3 py-2.5 text-left font-medium text-zinc-500 whitespace-nowrap">Status</th>
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-zinc-50 border-b border-zinc-200">
+                <th className="px-3 py-2.5 text-left font-semibold text-zinc-500 whitespace-nowrap sticky left-0 bg-zinc-50 border-r border-zinc-100 min-w-[140px] max-w-[180px]">Email</th>
+                <th className="px-3 py-2.5 text-left font-semibold text-zinc-500 whitespace-nowrap min-w-[90px]">Date</th>
+                <th className="px-3 py-2.5 text-left font-semibold text-zinc-500 whitespace-nowrap min-w-[90px]">Status</th>
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {fields.map((f: any) => (
-                  <th key={f.id} className="px-3 py-2.5 text-left font-medium text-zinc-500 whitespace-nowrap max-w-[180px]">
-                    {f.label || f.id}
+                  <th key={f.id} className="px-3 py-2.5 text-left font-semibold text-zinc-500 min-w-[120px] max-w-[200px]">
+                    <span className="block truncate">{f.label || f.id}</span>
                   </th>
                 ))}
               </tr>
@@ -222,9 +315,15 @@ function TableView({ submissions, forms, programId }: {
                 const data = (sub.data ?? {}) as Record<string, unknown>
                 const cfg = statusConfig[sub.status] ?? statusConfig.draft
                 return (
-                  <tr key={sub.id} className="hover:bg-zinc-50 transition-colors">
-                    <td className="px-3 py-2 text-zinc-700 font-medium whitespace-nowrap sticky left-0 bg-white">
-                      {sub.respondent_email ?? '—'}
+                  <tr
+                    key={sub.id}
+                    onClick={() => setExpandedSub(sub)}
+                    className="hover:bg-orange-50 cursor-pointer transition-colors group"
+                  >
+                    <td className="px-3 py-2 font-medium whitespace-nowrap sticky left-0 bg-white group-hover:bg-orange-50 border-r border-zinc-100 min-w-[140px] max-w-[180px] transition-colors">
+                      <span className="block truncate text-zinc-700">
+                        {sub.respondent_email ?? (isImported(sub) ? 'Imported' : '—')}
+                      </span>
                     </td>
                     <td className="px-3 py-2 text-zinc-500 whitespace-nowrap">
                       {sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : '—'}
@@ -239,8 +338,8 @@ function TableView({ submissions, forms, programId }: {
                       const val = data[f.id]
                       const display = Array.isArray(val) ? val.join(', ') : String(val ?? '')
                       return (
-                        <td key={f.id} className="px-3 py-2 text-zinc-600 max-w-[200px]">
-                          <span className="block truncate" title={display}>{display || '—'}</span>
+                        <td key={f.id} className="px-3 py-2 text-zinc-600 min-w-[120px] max-w-[200px]">
+                          <span className="block truncate" title={display || undefined}>{display || '—'}</span>
                         </td>
                       )
                     })}
@@ -251,6 +350,18 @@ function TableView({ submissions, forms, programId }: {
           </table>
         </div>
       )}
+
+      {/* Row detail dialog */}
+      <Dialog open={!!expandedSub} onOpenChange={open => { if (!open) setExpandedSub(null) }}>
+        {expandedSub && (
+          <SubmissionDetailDialog
+            sub={expandedSub}
+            fields={fields}
+            onClose={() => setExpandedSub(null)}
+            onAssigned={onAssigned}
+          />
+        )}
+      </Dialog>
     </div>
   )
 }
@@ -259,16 +370,27 @@ function TableView({ submissions, forms, programId }: {
 // Respondent Lookup
 // ---------------------------------------------------------------------------
 
-function RespondentLookup({ submissions, forms }: { submissions: Submission[]; forms: FormRow[] }) {
+const IMPORTED_KEY = '__imported__'
+
+function RespondentLookup({ submissions, forms, onAssigned }: {
+  submissions: Submission[]
+  forms: FormRow[]
+  onAssigned: (id: string, email: string) => void
+}) {
   const router = useRouter()
   const [search, setSearch] = useState('')
-  const [selectedEmail, setSelectedEmail] = useState<string | null>(null)
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [profileView, setProfileView] = useState<'timeline' | 'table'>('timeline')
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [assignSubId, setAssignSubId] = useState<string | null>(null)
+  const [assignEmail, setAssignEmail] = useState('')
+  const [assigning, setAssigning] = useState(false)
 
-  // Group submissions by respondent email
+  // Group submissions — null email → IMPORTED_KEY
   const respondentMap = useMemo(() => {
     const map = new Map<string, Submission[]>()
     for (const sub of submissions) {
-      const key = sub.respondent_email ?? '(anonymous)'
+      const key = sub.respondent_email ?? IMPORTED_KEY
       const bucket = map.get(key) ?? []
       bucket.push(sub)
       map.set(key, bucket)
@@ -278,8 +400,10 @@ function RespondentLookup({ submissions, forms }: { submissions: Submission[]; f
 
   const respondents = useMemo(() => {
     const all = Array.from(respondentMap.entries())
-      .map(([email, subs]) => ({
-        email,
+      .map(([key, subs]) => ({
+        key,
+        displayEmail: key === IMPORTED_KEY ? 'Imported records' : key,
+        isImported: key === IMPORTED_KEY,
         count: subs.length,
         latest: subs.reduce((a, b) => (a.submitted_at ?? '') > (b.submitted_at ?? '') ? a : b),
         subs: subs.sort((a, b) => (b.submitted_at ?? '').localeCompare(a.submitted_at ?? '')),
@@ -289,25 +413,67 @@ function RespondentLookup({ submissions, forms }: { submissions: Submission[]; f
     if (!search.trim()) return all
     const q = search.toLowerCase()
     return all.filter(r =>
-      r.email.toLowerCase().includes(q) ||
+      r.displayEmail.toLowerCase().includes(q) ||
       r.subs.some(s => s.forms?.name?.toLowerCase().includes(q))
     )
   }, [respondentMap, search])
 
-  const selectedRespondent = selectedEmail ? respondents.find(r => r.email === selectedEmail) : null
+  const selectedRespondent = selectedKey ? respondents.find(r => r.key === selectedKey) : null
+
+  // For table view: build field columns across all forms this respondent submitted to
+  const respondentFields = useMemo(() => {
+    if (!selectedRespondent) return []
+    const formIds = new Set(selectedRespondent.subs.map(s => s.form_id))
+    const seen = new Set<string>()
+    const out: { id: string; label: string; formId: string }[] = []
+    for (const form of forms) {
+      if (!formIds.has(form.id)) continue
+      for (const page of form.schema?.pages ?? []) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const f of page.fields as any[]) {
+          if (f.hidden || f.type === 'section' || f.type === 'heading') continue
+          if (!seen.has(f.id)) { seen.add(f.id); out.push({ id: f.id, label: f.label || f.id, formId: form.id }) }
+        }
+      }
+    }
+    return out
+  }, [selectedRespondent, forms])
+
+  async function handleAssign() {
+    if (!assignEmail.trim() || !assignSubId) return
+    setAssigning(true)
+    const res = await fetch(`/api/submissions/${assignSubId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ respondent_email: assignEmail.trim().toLowerCase() }),
+    })
+    setAssigning(false)
+    if (res.ok) {
+      toast.success(`Assigned to ${assignEmail.trim()}`)
+      onAssigned(assignSubId, assignEmail.trim().toLowerCase())
+      setAssignOpen(false)
+      setAssignEmail('')
+      setAssignSubId(null)
+    } else {
+      toast.error('Failed to assign — admin access required')
+    }
+  }
+
+  function openAssign(subId: string) {
+    setAssignSubId(subId)
+    setAssignEmail('')
+    setAssignOpen(true)
+  }
 
   return (
     <div className="flex gap-5 min-h-0">
-      {/* Left: respondent list */}
+      {/* Left list */}
       <div className="w-72 flex-shrink-0 space-y-3">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
-          <Input
-            placeholder="Search by email or form…"
-            value={search}
-            onChange={e => { setSearch(e.target.value); setSelectedEmail(null) }}
-            className="pl-8 h-9 text-sm"
-          />
+          <Input placeholder="Search by email or form…" value={search}
+            onChange={e => { setSearch(e.target.value); setSelectedKey(null) }}
+            className="pl-8 h-9 text-sm" />
         </div>
 
         <div className="rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
@@ -319,19 +485,19 @@ function RespondentLookup({ submissions, forms }: { submissions: Submission[]; f
           ) : (
             <div className="divide-y divide-zinc-100 max-h-[60vh] overflow-y-auto">
               {respondents.map(r => (
-                <button
-                  key={r.email}
-                  onClick={() => setSelectedEmail(r.email)}
+                <button key={r.key} onClick={() => setSelectedKey(r.key)}
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-zinc-50 transition-colors',
-                    selectedEmail === r.email && 'bg-orange-50 border-l-2 border-orange-500'
-                  )}
-                >
-                  <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[10px] font-semibold text-zinc-500">
-                    {r.email[0]?.toUpperCase() ?? '?'}
+                    selectedKey === r.key && 'bg-orange-50 border-l-2 border-orange-500'
+                  )}>
+                  <div className={cn(
+                    'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-semibold',
+                    r.isImported ? 'bg-zinc-200 text-zinc-500' : 'bg-zinc-100 text-zinc-500'
+                  )}>
+                    {r.isImported ? '?' : (r.displayEmail[0]?.toUpperCase() ?? '?')}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-zinc-800 truncate">{r.email}</p>
+                    <p className="text-xs font-medium text-zinc-800 truncate">{r.displayEmail}</p>
                     <p className="text-[10px] text-zinc-400">{r.count} submission{r.count !== 1 ? 's' : ''}</p>
                   </div>
                 </button>
@@ -341,8 +507,8 @@ function RespondentLookup({ submissions, forms }: { submissions: Submission[]; f
         </div>
       </div>
 
-      {/* Right: respondent profile */}
-      <div className="flex-1 min-w-0">
+      {/* Right: profile */}
+      <div className="flex-1 min-w-0 overflow-hidden">
         {!selectedRespondent ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-white h-64 text-center">
             <UserSearch className="h-8 w-8 text-zinc-200 mb-3" />
@@ -353,68 +519,164 @@ function RespondentLookup({ submissions, forms }: { submissions: Submission[]; f
           <div className="space-y-4">
             {/* Profile header */}
             <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100 text-sm font-semibold text-orange-600">
-                  {selectedRespondent.email[0]?.toUpperCase() ?? '?'}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={cn(
+                    'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold',
+                    selectedRespondent.isImported ? 'bg-zinc-100 text-zinc-400' : 'bg-orange-100 text-orange-600'
+                  )}>
+                    {selectedRespondent.isImported ? '?' : (selectedRespondent.displayEmail[0]?.toUpperCase() ?? '?')}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-zinc-900 truncate">{selectedRespondent.displayEmail}</p>
+                    <p className="text-xs text-zinc-500">
+                      {selectedRespondent.count} submission{selectedRespondent.count !== 1 ? 's' : ''} across{' '}
+                      {new Set(selectedRespondent.subs.map(s => s.form_id)).size} form{new Set(selectedRespondent.subs.map(s => s.form_id)).size !== 1 ? 's' : ''}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-zinc-900">{selectedRespondent.email}</p>
-                  <p className="text-xs text-zinc-500">
-                    {selectedRespondent.count} submission{selectedRespondent.count !== 1 ? 's' : ''} across{' '}
-                    {new Set(selectedRespondent.subs.map(s => s.form_id)).size} form{new Set(selectedRespondent.subs.map(s => s.form_id)).size !== 1 ? 's' : ''}
-                  </p>
+                {/* View toggle */}
+                <div className="flex rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 gap-0.5 flex-shrink-0">
+                  {(['timeline', 'table'] as const).map(mode => (
+                    <button key={mode} onClick={() => setProfileView(mode)}
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                        profileView === mode ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
+                      )}>
+                      {mode === 'timeline' ? <><List className="h-3 w-3" />Timeline</> : <><Table2 className="h-3 w-3" />Table</>}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Timeline */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 px-1">Submission history</p>
-              {selectedRespondent.subs.map((sub, i) => {
-                const cfg = statusConfig[sub.status] ?? statusConfig.draft
-                const period = formatPeriod(sub.forms?.settings)
-                return (
-                  <button
-                    key={sub.id}
-                    onClick={() => router.push(`/submissions/${sub.id}`)}
-                    className="w-full rounded-xl border border-zinc-200 bg-white p-3.5 shadow-sm text-left hover:border-zinc-300 hover:shadow transition-all group"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div className="flex-shrink-0 mt-0.5">
-                          {sub.status === 'reviewed'
-                            ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                            : sub.status === 'submitted'
-                            ? <Clock className="h-4 w-4 text-blue-400" />
-                            : <FileText className="h-4 w-4 text-zinc-300" />
-                          }
+            {/* Timeline view */}
+            {profileView === 'timeline' && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wider text-zinc-400 px-1">Submission history</p>
+                {selectedRespondent.subs.map(sub => {
+                  const cfg = statusConfig[sub.status] ?? statusConfig.draft
+                  const period = formatPeriod(sub.forms?.settings)
+                  return (
+                    <div key={sub.id} className="rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+                      <button onClick={() => router.push(`/submissions/${sub.id}`)}
+                        className="w-full p-3.5 text-left hover:bg-zinc-50 transition-colors group">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="flex-shrink-0 mt-0.5">
+                              {sub.status === 'reviewed' ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                : sub.status === 'submitted' ? <Clock className="h-4 w-4 text-blue-400" />
+                                : <FileText className="h-4 w-4 text-zinc-300" />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-zinc-800">{sub.forms?.name ?? 'Unknown form'}</p>
+                              {period && <p className="text-[11px] text-orange-600 flex items-center gap-1 mt-0.5"><Calendar className="h-2.5 w-2.5" />{period}</p>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-medium', cfg.className)}>{cfg.label}</span>
+                            <span className="text-[11px] text-zinc-400">{sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : 'Draft'}</span>
+                            <ChevronRight className="h-3.5 w-3.5 text-zinc-300 group-hover:text-zinc-500" />
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-zinc-800">{sub.forms?.name ?? 'Unknown form'}</p>
-                          {period && (
-                            <p className="text-[11px] text-orange-600 flex items-center gap-1 mt-0.5">
-                              <Calendar className="h-2.5 w-2.5" />{period}
-                            </p>
-                          )}
+                      </button>
+                      {selectedRespondent.isImported && (
+                        <div className="border-t border-zinc-100 px-3.5 py-2 bg-zinc-50 flex items-center justify-between">
+                          <span className="text-[11px] text-zinc-400">Imported — not linked to a contact</span>
+                          <button onClick={() => openAssign(sub.id)}
+                            className="flex items-center gap-1 text-[11px] text-orange-600 hover:text-orange-700 font-medium">
+                            <UserPlus className="h-3 w-3" /> Assign to contact
+                          </button>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-medium', cfg.className)}>
-                          {cfg.label}
-                        </span>
-                        <span className="text-[11px] text-zinc-400">
-                          {sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : 'Draft'}
-                        </span>
-                        <ChevronRight className="h-3.5 w-3.5 text-zinc-300 group-hover:text-zinc-500" />
-                      </div>
+                      )}
                     </div>
-                  </button>
-                )
-              })}
-            </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Table view */}
+            {profileView === 'table' && (
+              <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-zinc-50 border-b border-zinc-200">
+                      <th className="px-3 py-2.5 text-left font-semibold text-zinc-500 whitespace-nowrap sticky left-0 bg-zinc-50 border-r border-zinc-100">Form</th>
+                      <th className="px-3 py-2.5 text-left font-semibold text-zinc-500 whitespace-nowrap">Date</th>
+                      <th className="px-3 py-2.5 text-left font-semibold text-zinc-500 whitespace-nowrap">Status</th>
+                      {respondentFields.map(f => (
+                        <th key={f.id} className="px-3 py-2.5 text-left font-semibold text-zinc-500 min-w-[120px] max-w-[180px]">
+                          <span className="block truncate">{f.label}</span>
+                        </th>
+                      ))}
+                      {selectedRespondent.isImported && <th className="px-3 py-2.5 text-left font-semibold text-zinc-500 whitespace-nowrap">Assign</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {selectedRespondent.subs.map(sub => {
+                      const data = (sub.data ?? {}) as Record<string, unknown>
+                      const cfg = statusConfig[sub.status] ?? statusConfig.draft
+                      return (
+                        <tr key={sub.id} className="hover:bg-zinc-50 transition-colors">
+                          <td className="px-3 py-2 font-medium text-zinc-700 whitespace-nowrap sticky left-0 bg-white hover:bg-zinc-50 border-r border-zinc-100 max-w-[160px]">
+                            <span className="block truncate">{sub.forms?.name ?? '—'}</span>
+                          </td>
+                          <td className="px-3 py-2 text-zinc-500 whitespace-nowrap">
+                            {sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString() : '—'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-medium', cfg.className)}>{cfg.label}</span>
+                          </td>
+                          {respondentFields.map(f => {
+                            const val = sub.form_id === f.formId ? data[f.id] : undefined
+                            const display = val === undefined ? '' : Array.isArray(val) ? val.join(', ') : String(val ?? '')
+                            return (
+                              <td key={f.id} className="px-3 py-2 text-zinc-600 max-w-[180px]">
+                                <span className="block truncate" title={display || undefined}>{display || '—'}</span>
+                              </td>
+                            )
+                          })}
+                          {selectedRespondent.isImported && (
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <button onClick={() => openAssign(sub.id)}
+                                className="flex items-center gap-1 text-[11px] text-orange-600 hover:text-orange-700 font-medium">
+                                <UserPlus className="h-3 w-3" /> Assign
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* Assign dialog */}
+      <Dialog open={assignOpen} onOpenChange={open => { setAssignOpen(open); if (!open) setAssignEmail('') }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-4 w-4 text-orange-500" /> Assign to contact
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-zinc-500">Enter the email address this imported record belongs to.</p>
+          <Input type="email" placeholder="contact@example.com" value={assignEmail}
+            onChange={e => setAssignEmail(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleAssign() }}
+            autoFocus />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAssignOpen(false)}>Cancel</Button>
+            <Button onClick={handleAssign} disabled={assigning || !assignEmail.trim()}
+              className="bg-orange-600 hover:bg-orange-700 text-white">
+              {assigning ? 'Saving…' : 'Assign'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -451,6 +713,11 @@ export function SubmissionsClient() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // Update a single submission's email in local state after assignment
+  function handleAssigned(id: string, email: string) {
+    setSubmissions(prev => prev.map(s => s.id === id ? { ...s, respondent_email: email } : s))
+  }
+
   async function handleBulkReassign() {
     if (!currentProgram || !bulkFrom.trim() || !bulkTo.trim()) return
     setBulkBusy(true)
@@ -472,12 +739,14 @@ export function SubmissionsClient() {
     }
   }
 
-  const filtered = submissions.filter(s => {
-    const email = s.respondent_email?.toLowerCase() ?? ''
-    const formName = s.forms?.name?.toLowerCase() ?? ''
-    const q = search.toLowerCase()
-    return email.includes(q) || formName.includes(q)
-  }).filter(s => statusFilter === 'all' || s.status === statusFilter)
+  const filtered = submissions
+    .filter(s => {
+      const email = s.respondent_email?.toLowerCase() ?? ''
+      const formName = s.forms?.name?.toLowerCase() ?? ''
+      const q = search.toLowerCase()
+      return email.includes(q) || formName.includes(q)
+    })
+    .filter(s => statusFilter === 'all' || s.status === statusFilter)
 
   const tabs: { key: ActiveTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { key: 'list', label: 'All Submissions', icon: List },
@@ -497,8 +766,7 @@ export function SubmissionsClient() {
         </div>
         <div className="flex items-center gap-2">
           {submissions.length > 0 && (
-            <Button variant="outline" size="sm" className="gap-1.5 h-8 text-[13px]"
-              onClick={() => setBulkReassignOpen(true)}>
+            <Button variant="outline" size="sm" className="gap-1.5 h-8 text-[13px]" onClick={() => setBulkReassignOpen(true)}>
               <UserRoundCog className="h-3.5 w-3.5" /> Reassign person
             </Button>
           )}
@@ -515,24 +783,18 @@ export function SubmissionsClient() {
       {/* Tabs */}
       <div className="flex gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 mb-5 w-fit">
         {tabs.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
+          <button key={key} onClick={() => setActiveTab(key)}
             className={cn(
               'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
               activeTab === key ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:text-zinc-700'
-            )}
-          >
-            <Icon className="h-3.5 w-3.5" />
-            {label}
+            )}>
+            <Icon className="h-3.5 w-3.5" />{label}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div className="space-y-2">
-          {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
-        </div>
+        <div className="space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}</div>
       ) : (
         <>
           {/* ── List tab ── */}
@@ -541,38 +803,24 @@ export function SubmissionsClient() {
               <div className="flex items-center gap-3 mb-4">
                 <div className="relative flex-1 max-w-xs">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                  <Input
-                    placeholder="Search by email or form…"
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    className="pl-8 h-9 text-[13px]"
-                  />
+                  <Input placeholder="Search by email or form…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-9 text-[13px]" />
                 </div>
                 <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1">
                   {filterButtons.map(btn => (
-                    <button
-                      key={btn.key}
-                      onClick={() => setStatusFilter(btn.key)}
-                      className={cn(
-                        'rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
-                        statusFilter === btn.key ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900'
-                      )}
-                    >
+                    <button key={btn.key} onClick={() => setStatusFilter(btn.key)}
+                      className={cn('rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+                        statusFilter === btn.key ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900')}>
                       {btn.label}
                     </button>
                   ))}
                 </div>
               </div>
-
               {filtered.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-gray-200 bg-white py-20 text-center">
                   <Inbox className="mx-auto h-8 w-8 text-gray-200 mb-3" />
                   <p className="text-[14px] font-medium text-gray-500">
                     {search || statusFilter !== 'all' ? 'No submissions match your filters' : 'No submissions yet'}
                   </p>
-                  {!search && statusFilter === 'all' && (
-                    <p className="text-[13px] text-gray-400 mt-1">Invite respondents from a published form to get started.</p>
-                  )}
                 </div>
               ) : (
                 <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
@@ -582,14 +830,9 @@ export function SubmissionsClient() {
                       ? formatDistanceToNow(new Date(sub.submitted_at), { addSuffix: true })
                       : formatDistanceToNow(new Date(sub.created_at), { addSuffix: true })
                     return (
-                      <button
-                        key={sub.id}
-                        onClick={() => router.push(`/submissions/${sub.id}`)}
-                        className={cn(
-                          'w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left group',
-                          i < filtered.length - 1 && 'border-b border-gray-50'
-                        )}
-                      >
+                      <button key={sub.id} onClick={() => router.push(`/submissions/${sub.id}`)}
+                        className={cn('w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left group',
+                          i < filtered.length - 1 && 'border-b border-gray-50')}>
                         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 text-[11px] font-semibold text-gray-500">
                           {(displayName(sub)[0] ?? '?').toUpperCase()}
                         </div>
@@ -597,20 +840,11 @@ export function SubmissionsClient() {
                           <p className="text-[14px] font-medium text-gray-800 truncate">{displayName(sub)}</p>
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-[12px] text-gray-400 truncate">{sub.forms?.name ?? 'Unknown form'}</p>
-                            {(() => {
-                              const period = formatPeriod(sub.forms?.settings)
-                              return period ? (
-                                <span className="flex items-center gap-1 text-[10px] font-medium text-orange-600">
-                                  <Calendar className="h-2.5 w-2.5" />{period}
-                                </span>
-                              ) : null
-                            })()}
+                            {(() => { const p = formatPeriod(sub.forms?.settings); return p ? <span className="flex items-center gap-1 text-[10px] font-medium text-orange-600"><Calendar className="h-2.5 w-2.5" />{p}</span> : null })()}
                           </div>
                         </div>
                         <span className="text-[12px] text-gray-400 flex-shrink-0">{submittedAt}</span>
-                        <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium flex-shrink-0', cfg.className)}>
-                          {cfg.label}
-                        </span>
+                        <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-medium flex-shrink-0', cfg.className)}>{cfg.label}</span>
                         <ChevronRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-gray-400 flex-shrink-0" />
                       </button>
                     )
@@ -620,32 +854,22 @@ export function SubmissionsClient() {
             </>
           )}
 
-          {/* ── Table tab ── */}
-          {activeTab === 'table' && (
-            <TableView submissions={submissions} forms={forms} programId={currentProgram?.id ?? ''} />
-          )}
-
-          {/* ── Respondent Lookup tab ── */}
-          {activeTab === 'respondents' && (
-            <RespondentLookup submissions={submissions} forms={forms} />
-          )}
+          {activeTab === 'table' && <TableView submissions={submissions} forms={forms} onAssigned={handleAssigned} />}
+          {activeTab === 'respondents' && <RespondentLookup submissions={submissions} forms={forms} onAssigned={handleAssigned} />}
         </>
       )}
 
       {/* Bulk reassign dialog */}
       <Dialog open={bulkReassignOpen} onOpenChange={o => { setBulkReassignOpen(o); if (!o) { setBulkFrom(''); setBulkTo('') } }}>
-        <DialogContent className="sm:max-w-md" aria-describedby="bulk-reassign-desc">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Reassign submissions</DialogTitle>
-            <p id="bulk-reassign-desc" className="text-[13px] text-muted-foreground mt-1">
-              Move all submissions from one person to another.
-            </p>
+            <p className="text-[13px] text-muted-foreground mt-1">Move all submissions from one email to another.</p>
           </DialogHeader>
           <div className="py-2 space-y-4">
             <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-gray-700">From (current owner)</label>
-              <Input type="email" placeholder="retiring@email.com" value={bulkFrom}
-                onChange={e => setBulkFrom(e.target.value)} className="h-9 text-[13px]" autoFocus />
+              <label className="text-[13px] font-medium text-gray-700">From (current email)</label>
+              <Input type="email" placeholder="retiring@email.com" value={bulkFrom} onChange={e => setBulkFrom(e.target.value)} className="h-9 text-[13px]" autoFocus />
               {bulkFrom.trim() && (() => {
                 const count = submissions.filter(s => s.respondent_email === bulkFrom.trim()).length
                 return count > 0
@@ -654,9 +878,8 @@ export function SubmissionsClient() {
               })()}
             </div>
             <div className="space-y-1.5">
-              <label className="text-[13px] font-medium text-gray-700">To (new owner)</label>
-              <Input type="email" placeholder="successor@email.com" value={bulkTo}
-                onChange={e => setBulkTo(e.target.value)} className="h-9 text-[13px]" />
+              <label className="text-[13px] font-medium text-gray-700">To (new email)</label>
+              <Input type="email" placeholder="successor@email.com" value={bulkTo} onChange={e => setBulkTo(e.target.value)} className="h-9 text-[13px]" />
             </div>
           </div>
           <DialogFooter>
