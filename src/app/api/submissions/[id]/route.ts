@@ -40,6 +40,31 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
   const { status, data: newData, respondent_email, reviewer_comment } = parsed.data
 
+  // Verify the requesting user is an admin/staff for the submission's program before
+  // using the service client (which bypasses RLS). Without this any authenticated
+  // user could update any submission by guessing its ID.
+  const { data: submissionCheck } = await supabase
+    .from('submissions')
+    .select('id, forms(program_id)')
+    .eq('id', id)
+    .single()
+
+  if (!submissionCheck) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const programId = (submissionCheck.forms as { program_id: string } | null)?.program_id
+  if (programId) {
+    const { count: memberCount } = await supabase
+      .from('program_memberships')
+      .select('*', { count: 'exact', head: true })
+      .eq('program_id', programId)
+      .eq('user_id', user.id)
+      .in('role', ['super_admin', 'program_admin', 'staff'])
+
+    if ((memberCount ?? 0) === 0) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
+
   // 'flagged' is stored in metadata.flagged (not the DB enum) — fetch current row first
   const { data: existing } = await service.from('submissions').select('metadata').eq('id', id).single()
   const existingMeta = ((existing?.metadata ?? {}) as Record<string, unknown>)

@@ -23,6 +23,20 @@ export async function POST(request: Request) {
 
   const { from_email, to_email, program_id, form_id } = parsed.data
 
+  // Verify the requesting user is an admin of the target program before touching
+  // any data. Without this, any authenticated user could reassign submissions
+  // across programs they don't belong to.
+  const { count: memberCount } = await supabase
+    .from('program_memberships')
+    .select('*', { count: 'exact', head: true })
+    .eq('program_id', program_id)
+    .eq('user_id', user.id)
+    .in('role', ['super_admin', 'program_admin'])
+
+  if ((memberCount ?? 0) === 0) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   // Find matching submissions via form's program_id
   let query = service
     .from('submissions')

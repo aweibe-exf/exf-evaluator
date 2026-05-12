@@ -5,6 +5,8 @@ import { sendCollaborationEmail } from '@/lib/email'
 import type { Json } from '@/types/database'
 
 const schema = z.object({
+  // Caller must supply the token string to prove they are the legitimate token holder.
+  token: z.string().min(1),
   collaboratorEmail: z.string().email(),
   comment: z.string().max(1000).optional(),
   flaggedFieldIds: z.array(z.string()).optional(),
@@ -19,13 +21,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = schema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { collaboratorEmail, comment, flaggedFieldIds = [], currentData = {} } = parsed.data
+  const { token, collaboratorEmail, comment, flaggedFieldIds = [], currentData = {} } = parsed.data
 
-  // Fetch owner token with form info
+  // Verify both the record ID and the token string — the caller must prove they
+  // are the token holder, not just someone who guessed an internal record UUID.
   const { data: ownerToken } = await service
     .from('submission_tokens')
     .select('*, forms(name, slug, program_id, programs(name))')
     .eq('id', id)
+    .eq('token', token)
     .single()
 
   if (!ownerToken) return NextResponse.json({ error: 'Token not found' }, { status: 404 })

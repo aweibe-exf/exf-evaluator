@@ -407,7 +407,7 @@ export function FormRenderer({
     const res = await fetch(`/api/tokens/${tokenId}/return`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data }),
+      body: JSON.stringify({ token, data }),
     })
     setSubmitting(false)
     if (res.ok) {
@@ -427,6 +427,7 @@ export function FormRenderer({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        token,
         collaboratorEmail: delegateEmail.trim(),
         comment: delegateComment.trim() || undefined,
         flaggedFieldIds: [...flaggedIds],

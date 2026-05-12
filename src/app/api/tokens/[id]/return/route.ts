@@ -5,6 +5,8 @@ import { sendReturnNotificationEmail } from '@/lib/email'
 import type { Json } from '@/types/database'
 
 const schema = z.object({
+  // Caller must supply the token string to prove they are the legitimate collaborator.
+  token: z.string().min(1),
   data: z.record(z.string(), z.unknown()),
 })
 
@@ -16,13 +18,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = schema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { data: collaboratorAnswers } = parsed.data
+  const { token, data: collaboratorAnswers } = parsed.data
 
-  // Fetch collaboration token
+  // Verify both the record ID and the token string — prevents an attacker who
+  // knows a collaborator token's internal UUID from hijacking the return flow.
   const { data: collabToken } = await service
     .from('submission_tokens')
     .select('*')
     .eq('id', id)
+    .eq('token', token)
     .single()
 
   if (!collabToken) return NextResponse.json({ error: 'Token not found' }, { status: 404 })

@@ -21,7 +21,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const { comment } = parsed.data
 
-  // Fetch the submission + form info
+  // Fetch via user-scoped client first to confirm the submission exists AND
+  // the user's RLS policies allow them to see it (program membership check).
+  const { data: submissionCheck } = await supabase
+    .from('submissions')
+    .select('id, forms(program_id)')
+    .eq('id', id)
+    .single()
+
+  if (!submissionCheck) return NextResponse.json({ error: 'Submission not found' }, { status: 404 })
+
+  // Require admin/staff membership — viewers cannot send feedback.
+  const programId = (submissionCheck.forms as { program_id: string } | null)?.program_id
+  if (programId) {
+    const { count: memberCount } = await supabase
+      .from('program_memberships')
+      .select('*', { count: 'exact', head: true })
+      .eq('program_id', programId)
+      .eq('user_id', user.id)
+      .in('role', ['super_admin', 'program_admin', 'staff'])
+
+    if ((memberCount ?? 0) === 0) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
+
+  // Now fetch full details via service client for the email / metadata update.
   const { data: submission, error: fetchErr } = await service
     .from('submissions')
     .select('id, respondent_email, metadata, forms(name, program_id, programs(name))')
