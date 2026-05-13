@@ -101,14 +101,14 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f7f7f8]">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-[360px]">
         <div className="mb-8 flex flex-col items-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-600 shadow-lg shadow-orange-600/20">
-            <span className="text-white font-bold text-sm tracking-tight">EP</span>
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500 shadow-lg shadow-orange-500/25">
+            <span className="text-white font-semibold text-[13px] tracking-tight">EP</span>
           </div>
-          <h1 className="mt-4 text-[20px] font-semibold tracking-tight text-gray-900">Extension Pulse</h1>
-          <p className="mt-1 text-[13px] text-gray-500">Sign in to your account</p>
+          <h1 className="mt-4 text-[22px] font-semibold tracking-tight text-gray-900">Extension Pulse</h1>
+          <p className="mt-1 text-[13px] text-gray-400">Sign in to your account</p>
         </div>
         <Suspense fallback={
           <div className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">

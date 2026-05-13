@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import { Lato, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const lato = Lato({
+const geist = Geist({
   variable: "--font-inter",
   subsets: ["latin"],
-  weight: ["300", "400", "700", "900"],
   display: "swap",
 });
 
@@ -25,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${lato.variable} ${geistMono.variable} h-full`}>
+    <html lang="en" className={`${geist.variable} ${geistMono.variable} h-full`}>
       <body className="min-h-full flex flex-col antialiased">{children}</body>
     </html>
   );
