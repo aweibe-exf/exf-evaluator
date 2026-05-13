@@ -134,30 +134,28 @@ export function InvitesPanel({ formId, formSlug }: Props) {
           <span className="flex items-center gap-1"><Clock className="h-3 w-3 text-amber-500" aria-hidden="true" />{pending.length} pending</span>
           <span className="text-gray-300">{expired.length} expired</span>
         </div>
-        <div className="flex items-center gap-2">
-          {pending.length > 0 && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={remindAllPending}
-              disabled={remindingAll}
-              aria-busy={remindingAll}
-              className="h-7 text-[11px] text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-1"
-            >
-              <BellRing className="h-3 w-3" aria-hidden="true" />
-              {remindingAll ? 'Sending…' : 'Remind all pending'}
-            </Button>
-          )}
-          <button
-            onClick={fetchTokens}
-            className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded"
-            aria-label="Refresh invitations"
-            disabled={loading}
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden="true" />
-          </button>
-        </div>
+        <button
+          onClick={fetchTokens}
+          className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 rounded"
+          aria-label="Refresh invitations"
+          disabled={loading}
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden="true" />
+        </button>
       </div>
+      {pending.length > 0 && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={remindAllPending}
+          disabled={remindingAll}
+          aria-busy={remindingAll}
+          className="w-full h-8 text-[12px] text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700 gap-1.5"
+        >
+          <BellRing className="h-3.5 w-3.5" aria-hidden="true" />
+          {remindingAll ? 'Sending reminders…' : 'Remind all pending'}
+        </Button>
+      )}
 
       {loading ? (
         <div className="space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}</div>

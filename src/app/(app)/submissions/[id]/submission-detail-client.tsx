@@ -39,9 +39,47 @@ const statusConfig: Record<Status, { label: string; className: string }> = {
 
 const LAYOUT_TYPES = ['section_header', 'instructional_text', 'spacer', 'page_break']
 
-function formatAnswer(value: unknown): string {
+/** Format a stored answer value into a human-readable string, resolving option labels. */
+function formatAnswer(field: FormField, value: unknown): string {
   if (value === undefined || value === null || value === '') return '—'
+
+  // Multiple choice — array of option values
+  if (field.type === 'multiple_choice' || field.type === 'image_choice') {
+    const arr = Array.isArray(value) ? value as string[] : [String(value)]
+    if (arr.length === 0) return '—'
+    const options = field.options ?? []
+    return arr.map(v => options.find(o => o.value === v)?.label ?? v).join(', ')
+  }
+
+  // Single choice / dropdown — look up the label
+  if (field.type === 'single_choice' || field.type === 'dropdown') {
+    const options = field.options ?? []
+    const label = options.find(o => o.value === String(value))?.label
+    return label ?? String(value)
+  }
+
+  // Matrix — { rowId: colId } object
+  if (field.type === 'matrix') {
+    if (typeof value !== 'object' || Array.isArray(value)) return String(value)
+    const obj = value as Record<string, string>
+    const rows = field.matrixRows ?? []
+    const cols = field.matrixColumns ?? []
+    const parts = Object.entries(obj).map(([rowId, colId]) => {
+      const rowLabel = rows.find(r => r.id === rowId)?.label ?? rowId
+      const colLabel = cols.find(c => c.id === colId)?.label ?? colId
+      return `${rowLabel}: ${colLabel}`
+    })
+    return parts.length > 0 ? parts.join(' · ') : '—'
+  }
+
+  // Arrays (fallback)
   if (Array.isArray(value)) return value.join(', ')
+
+  // Objects (fallback — avoid [object Object])
+  if (typeof value === 'object') {
+    try { return JSON.stringify(value) } catch { return '—' }
+  }
+
   return String(value)
 }
 
@@ -69,8 +107,6 @@ function EditControl({
         />
       )
     case 'number':
-    case 'rating':
-    case 'nps':
     case 'slider':
       return (
         <Input
@@ -81,6 +117,27 @@ function EditControl({
           aria-label={field.label}
         />
       )
+    case 'rating':
+    case 'nps':
+    case 'likert_scale': {
+      const max = field.scale ?? field.max ?? (field.type === 'nps' ? 10 : 5)
+      const nums = Array.from({ length: max }, (_, i) => i + 1)
+      return (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={field.label}>
+          {nums.map(n => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onChange(String(n))}
+              className={`w-9 h-9 rounded-lg border text-[13px] font-medium transition-colors ${str === String(n) ? 'bg-orange-600 border-orange-600 text-white' : 'border-gray-200 text-gray-600 hover:border-orange-400'}`}
+              aria-pressed={str === String(n)}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      )
+    }
     case 'date':
       return (
         <Input
@@ -92,6 +149,7 @@ function EditControl({
         />
       )
     case 'single_choice':
+    case 'image_choice':
     case 'dropdown': {
       const options = field.options ?? []
       return (
@@ -106,6 +164,76 @@ function EditControl({
         </select>
       )
     }
+    case 'multiple_choice': {
+      const options = field.options ?? []
+      const selected = Array.isArray(value) ? (value as string[]) : []
+      return (
+        <div className="space-y-1.5" role="group" aria-label={field.label}>
+          {options.map(opt => (
+            <label key={opt.id} className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                value={opt.value}
+                checked={selected.includes(opt.value)}
+                onChange={e => {
+                  const next = e.target.checked
+                    ? [...selected, opt.value]
+                    : selected.filter(v => v !== opt.value)
+                  onChange(next)
+                }}
+                className="h-3.5 w-3.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+              />
+              <span className="text-[13px] text-gray-700">{opt.label}</span>
+            </label>
+          ))}
+        </div>
+      )
+    }
+    case 'matrix': {
+      const rows = field.matrixRows ?? []
+      const cols = field.matrixColumns ?? []
+      const matrixVal = (typeof value === 'object' && !Array.isArray(value) && value !== null)
+        ? (value as Record<string, string>)
+        : {}
+      return (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px]" role="grid" aria-label={field.label}>
+            <thead>
+              <tr>
+                <th className="text-left pb-1.5 text-gray-400 font-normal w-1/3" />
+                {cols.map(col => (
+                  <th key={col.id} className="pb-1.5 text-gray-600 font-medium text-center px-2">{col.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => (
+                <tr key={row.id} className="border-t border-gray-50">
+                  <td className="py-2 pr-3 text-gray-700">{row.label}</td>
+                  {cols.map(col => (
+                    <td key={col.id} className="py-2 text-center px-2">
+                      <input
+                        type={field.matrixType === 'checkbox' ? 'checkbox' : 'radio'}
+                        name={`edit-matrix-${field.id}-${row.id}`}
+                        value={col.id}
+                        checked={matrixVal[row.id] === col.id}
+                        onChange={() => onChange({ ...matrixVal, [row.id]: col.id })}
+                        className="h-3.5 w-3.5 text-orange-600 border-gray-300 focus:ring-orange-500"
+                        aria-label={`${row.label} — ${col.label}`}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+    case 'file_upload':
+    case 'signature':
+      // These can't be meaningfully edited inline — show read-only notice
+      return <p className="text-[12px] text-gray-400 italic">Cannot edit {field.type === 'file_upload' ? 'file uploads' : 'signatures'} here.</p>
     default:
       return (
         <Input
@@ -449,7 +577,7 @@ export function SubmissionDetailClient({ submission: initial, schema, currentRol
                     onChange={v => setEditData(d => ({ ...d, [field.id]: v }))}
                   />
                 ) : (
-                  <span className="text-[13px] text-gray-800">{formatAnswer(data[field.id])}</span>
+                  <span className="text-[13px] text-gray-800">{formatAnswer(field, data[field.id])}</span>
                 )}
               </dd>
             </div>

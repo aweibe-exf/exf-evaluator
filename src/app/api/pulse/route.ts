@@ -16,7 +16,10 @@ const createSchema = z.object({
   title: z.string().max(200).optional(),
   content: z.string().min(1).max(50000),
   source: z.enum(['typed', 'voice', 'google_doc', 'attachment']).default('typed'),
-  note_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // note_date must come from the client in the user's local timezone.
+  // Never fall back to a server-generated date — the server runs UTC and has no
+  // knowledge of the user's timezone.
+  note_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   google_doc_url: z.string().url().optional(),
   attachments: z.array(attachmentSchema).optional(),
 })
@@ -71,7 +74,7 @@ export async function POST(request: Request) {
       title: title?.trim() || null,
       content,
       source,
-      note_date: note_date ?? new Date().toISOString().slice(0, 10),
+      note_date: note_date,
       google_doc_url: google_doc_url ?? null,
       attachments: (attachments ?? []) as Json,
     })

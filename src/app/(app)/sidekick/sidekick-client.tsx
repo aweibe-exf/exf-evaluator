@@ -168,12 +168,35 @@ export function SidekickClient() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const messageCountRef = useRef(0)
 
-  // Auto-scroll to latest message
+  // Scroll behaviour:
+  // - When a NEW message is added (count changes), scroll to bottom unconditionally.
+  // - During streaming (same count, content changing), only scroll if the user
+  //   is already near the bottom — so they can scroll up to read without being
+  //   yanked back down on every token.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const newCount = messages.length
+    const isNewMessage = newCount !== messageCountRef.current
+    messageCountRef.current = newCount
+
+    if (isNewMessage) {
+      // New message added — always scroll to bottom, instant (no smooth jitter)
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+      return
+    }
+
+    // Streaming update — only follow if already within 120px of the bottom
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    if (distanceFromBottom < 120) {
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+    }
   }, [messages])
 
   const sendMessage = useCallback(async (text: string) => {
@@ -278,7 +301,7 @@ export function SidekickClient() {
       </header>
 
       {/* Messages area — aria-live so screen readers announce new messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6" role="log" aria-label="Conversation" aria-live="polite" aria-atomic="false">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-6" role="log" aria-label="Conversation" aria-live="polite" aria-atomic="false">
         <div className="mx-auto max-w-2xl space-y-5">
 
           {isEmpty ? (

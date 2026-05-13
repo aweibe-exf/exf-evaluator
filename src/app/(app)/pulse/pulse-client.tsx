@@ -23,7 +23,7 @@ import {
   ChevronDown,
   Radio,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, parseDate, todayLocalIso } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -65,13 +65,7 @@ interface PulseNote {
 // ---------------------------------------------------------------------------
 
 function formatDate(iso: string) {
-  const [y, m, d] = iso.split('-')
-  const date = new Date(Number(y), Number(m) - 1, Number(d))
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10)
+  return parseDate(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function fileSize(bytes: number) {
@@ -275,7 +269,7 @@ export function PulseClient() {
   // Compose state
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
-  const [noteDate, setNoteDate] = useState(todayIso())
+  const [noteDate, setNoteDate] = useState(todayLocalIso())
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [saving, setSaving] = useState(false)
   const [composeError, setComposeError] = useState('')
@@ -508,7 +502,7 @@ export function PulseClient() {
       setNotes(prev => [created, ...prev])
       setTitle('')
       setContent('')
-      setNoteDate(todayIso())
+      setNoteDate(todayLocalIso())
       setAttachments([])
       setGdocSource('')
     } else {

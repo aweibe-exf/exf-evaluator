@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDistanceToNow, format } from 'date-fns'
-import { cn } from '@/lib/utils'
+import { cn, parseDate } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -325,10 +325,10 @@ export function FilesClient() {
               {/* Date */}
               <div className="min-w-0">
                 <p className="text-[13px] text-gray-700">
-                  {format(new Date(file.noteDate), 'MMM d, yyyy')}
+                  {format(parseDate(file.noteDate), 'MMM d, yyyy')}
                 </p>
                 <p className="text-[11px] text-gray-400">
-                  {formatDistanceToNow(new Date(file.noteDate), { addSuffix: true })}
+                  {formatDistanceToNow(parseDate(file.noteDate), { addSuffix: true })}
                 </p>
               </div>
 

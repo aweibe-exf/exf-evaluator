@@ -22,8 +22,39 @@ interface Submission {
 
 function renderAnswer(field: FormField, value: unknown): string {
   if (value === null || value === undefined || value === '') return '—'
+
+  // Multiple choice — resolve option labels
+  if (field.type === 'multiple_choice' || field.type === 'image_choice') {
+    const arr = Array.isArray(value) ? (value as string[]) : [String(value)]
+    if (arr.length === 0) return '—'
+    const options = field.options ?? []
+    return arr.map(v => options.find(o => o.value === v)?.label ?? v).join(', ')
+  }
+
+  // Single choice / dropdown — resolve label
+  if (field.type === 'single_choice' || field.type === 'dropdown') {
+    const options = field.options ?? []
+    return options.find(o => o.value === String(value))?.label ?? String(value)
+  }
+
+  // Matrix — { rowId: colId }
+  if (field.type === 'matrix') {
+    if (typeof value !== 'object' || Array.isArray(value)) return String(value)
+    const obj = value as Record<string, string>
+    const rows = field.matrixRows ?? []
+    const cols = field.matrixColumns ?? []
+    const parts = Object.entries(obj).map(([rowId, colId]) => {
+      const rowLabel = rows.find(r => r.id === rowId)?.label ?? rowId
+      const colLabel = cols.find(c => c.id === colId)?.label ?? colId
+      return `${rowLabel}: ${colLabel}`
+    })
+    return parts.length > 0 ? parts.join('\n') : '—'
+  }
+
   if (Array.isArray(value)) return value.join(', ')
-  if (typeof value === 'object') return JSON.stringify(value)
+  if (typeof value === 'object') {
+    try { return JSON.stringify(value) } catch { return '—' }
+  }
   return String(value)
 }
 
