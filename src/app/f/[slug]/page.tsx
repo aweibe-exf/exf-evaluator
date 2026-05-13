@@ -39,7 +39,7 @@ export default async function PublicFormPage({ params, searchParams }: Props) {
         tokenId=""
         tokenMetadata={{}}
         respondentEmail={null}
-        programName={program?.name ?? 'Extension Foundation'}
+        programName={program?.name ?? 'Extension Pulse'}
         brandColor={program?.brand_color ?? '#ea580c'}
         confirmationMessage={settings.confirmation_message as string | undefined}
         redirectUrl={undefined}
@@ -87,7 +87,7 @@ export default async function PublicFormPage({ params, searchParams }: Props) {
       tokenId={tokenRow.id}
       tokenMetadata={(tokenRow.metadata ?? {}) as Record<string, unknown>}
       respondentEmail={tokenRow.email}
-      programName={program?.name ?? 'Extension Foundation'}
+      programName={program?.name ?? 'Extension Pulse'}
       brandColor={program?.brand_color ?? '#ea580c'}
       confirmationMessage={settings.confirmation_message as string | undefined}
       redirectUrl={settings.redirect_url as string | undefined}

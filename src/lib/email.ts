@@ -1,6 +1,6 @@
 const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY
 const MAILGUN_DOMAIN = process.env.MAILGUN_DOMAIN
-const FROM_EMAIL = process.env.MAILGUN_FROM_EMAIL ?? `EXF Evaluator <noreply@${MAILGUN_DOMAIN}>`
+const FROM_EMAIL = process.env.MAILGUN_FROM_EMAIL ?? `Extension Pulse <noreply@${MAILGUN_DOMAIN}>`
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3002'
 
 interface SendTokenEmailParams {

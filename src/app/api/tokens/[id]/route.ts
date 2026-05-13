@@ -35,7 +35,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!token) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const form = token.forms as { name: string; slug: string; program_id: string; programs: { name: string } | null } | null
-  const programName = form?.programs?.name ?? 'Extension Foundation'
+  const programName = form?.programs?.name ?? 'Extension Pulse'
 
   try {
     await sendTokenEmail({

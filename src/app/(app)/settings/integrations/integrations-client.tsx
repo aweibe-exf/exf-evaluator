@@ -61,12 +61,12 @@ const WRAPPER = (body: string, subject: string) => `<!DOCTYPE html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
 <body style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:32px 16px;color:#111;background:#fff;">
   <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #e5e5e5;">
-    <p style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#888;margin:0;">EXF Evaluator</p>
+    <p style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#888;margin:0;">Extension Pulse</p>
     <h1 style="font-size:20px;font-weight:600;margin:8px 0 0;">${subject}</h1>
   </div>
   ${body}
   <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e5e5;font-size:11px;color:#aaa;">
-    <p>Sent by EXF Evaluator · Extension Foundation</p>
+    <p>Sent by Extension Pulse</p>
   </div>
 </body>
 </html>`

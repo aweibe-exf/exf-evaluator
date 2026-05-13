@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Send email
-  const programName = (form.programs as { name: string } | null)?.name ?? 'Extension Foundation'
+  const programName = (form.programs as { name: string } | null)?.name ?? 'Extension Pulse'
   try {
     await sendTokenEmail({
       to: email,

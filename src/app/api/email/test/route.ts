@@ -11,7 +11,7 @@ const schema = z.object({
 
 const MAILGUN_API_KEY = process.env.MAILGUN_API_KEY
 const MAILGUN_DOMAIN = process.env.MAILGUN_DOMAIN
-const FROM_EMAIL = process.env.MAILGUN_FROM_EMAIL ?? `EXF Evaluator <noreply@${MAILGUN_DOMAIN}>`
+const FROM_EMAIL = process.env.MAILGUN_FROM_EMAIL ?? `Extension Pulse <noreply@${MAILGUN_DOMAIN}>`
 
 export async function POST(request: Request) {
   const supabase = await createClient()

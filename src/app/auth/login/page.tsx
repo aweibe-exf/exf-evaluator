@@ -105,9 +105,9 @@ export default function LoginPage() {
       <div className="w-full max-w-[360px]">
         <div className="mb-8 flex flex-col items-center">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-600 shadow-lg shadow-orange-600/20">
-            <span className="text-white font-bold text-sm tracking-tight">EXF</span>
+            <span className="text-white font-bold text-sm tracking-tight">EP</span>
           </div>
-          <h1 className="mt-4 text-[20px] font-semibold tracking-tight text-gray-900">EXF Evaluator</h1>
+          <h1 className="mt-4 text-[20px] font-semibold tracking-tight text-gray-900">Extension Pulse</h1>
           <p className="mt-1 text-[13px] text-gray-500">Sign in to your account</p>
         </div>
         <Suspense fallback={

@@ -88,7 +88,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       to: collaboratorEmail,
       ownerEmail: ownerToken.email,
       formName: form.name,
-      programName: form.programs?.name ?? 'Extension Foundation',
+      programName: form.programs?.name ?? 'Extension Pulse',
       token: collabToken,
       formSlug: form.slug,
       expiresAt: ownerToken.expires_at,

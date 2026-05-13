@@ -47,7 +47,7 @@ export async function POST() {
       }
 
       const programsData = form.programs as { name: string } | null
-      const programName = programsData?.name ?? 'Extension Foundation'
+      const programName = programsData?.name ?? 'Extension Pulse'
 
       try {
         await sendTokenEmail({

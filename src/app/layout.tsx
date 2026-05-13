@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EXF Evaluator",
-  description: "Extension Foundation evaluation and reporting platform",
+  title: "Extension Pulse",
+  description: "Program evaluation and reporting platform for extension education",
 };
 
 export default function RootLayout({
