@@ -702,6 +702,11 @@ export function SubmissionsClient() {
 
   const fetchData = useCallback(async () => {
     if (!currentProgram) return
+    // Clear stale data immediately so switching programs never shows another
+    // program's submissions while the new fetch is in flight.
+    setSubmissions([])
+    setForms([])
+    setSelectedIds(new Set())
     setLoading(true)
     const [subsRes, formsRes] = await Promise.all([
       fetch(`/api/submissions?program_id=${currentProgram.id}`),

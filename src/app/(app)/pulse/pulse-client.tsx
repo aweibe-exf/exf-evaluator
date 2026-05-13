@@ -319,6 +319,7 @@ export function PulseClient() {
   // ---------------------------------------------------------------------------
 
   const loadNotes = useCallback(async (programId: string) => {
+    setNotes([])
     setLoading(true)
     const res = await fetch(`/api/pulse?program_id=${programId}`)
     if (res.ok) setNotes(await res.json())

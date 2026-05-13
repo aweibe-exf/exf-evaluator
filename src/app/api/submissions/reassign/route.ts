@@ -37,16 +37,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Find matching submissions via form's program_id
-  let query = service
+  // Resolve form IDs for this program explicitly (filtering via joined table columns
+  // is unreliable in PostgREST — use .in('form_id', ...) for hard isolation).
+  const formQuery = service.from('forms').select('id').eq('program_id', program_id)
+  if (form_id) formQuery.eq('id', form_id)
+  const { data: programForms } = await formQuery
+  const programFormIds = (programForms ?? []).map(f => f.id)
+  if (programFormIds.length === 0) return NextResponse.json({ updated: 0 })
+
+  // Find matching submissions scoped strictly to this program's forms
+  const { data: matches, error: findErr } = await service
     .from('submissions')
-    .select('id, forms!inner(program_id)')
+    .select('id')
     .eq('respondent_email', from_email)
-    .eq('forms.program_id', program_id)
+    .in('form_id', programFormIds)
 
-  if (form_id) query = query.eq('form_id', form_id)
-
-  const { data: matches, error: findErr } = await query
   if (findErr) return NextResponse.json({ error: findErr.message }, { status: 500 })
 
   if (!matches || matches.length === 0) {

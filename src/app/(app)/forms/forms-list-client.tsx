@@ -164,6 +164,7 @@ export function FormsListClient() {
 
   const fetchForms = useCallback(async () => {
     if (!currentProgram) return
+    setForms([])
     setLoading(true)
     const res = await fetch(`/api/forms?program_id=${currentProgram.id}`)
     if (res.ok) setForms(await res.json())

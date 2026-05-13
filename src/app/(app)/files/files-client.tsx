@@ -123,6 +123,7 @@ export function FilesClient() {
 
   useEffect(() => {
     if (!currentProgram) return
+    setFiles([])
     setLoading(true)
     fetch(`/api/pulse?program_id=${currentProgram.id}`)
       .then(r => r.ok ? r.json() : [])

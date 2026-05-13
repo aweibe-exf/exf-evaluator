@@ -38,6 +38,7 @@ export function ReportsClient() {
 
   const fetchReports = useCallback(async () => {
     if (!currentProgram) return
+    setReports([])
     setLoading(true)
     const res = await fetch(`/api/reports?program_id=${currentProgram.id}`)
     if (res.ok) setReports(await res.json())

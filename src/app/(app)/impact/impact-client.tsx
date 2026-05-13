@@ -55,6 +55,7 @@ export function ImpactClient() {
 
   const fetchData = useCallback(async () => {
     if (!currentProgram) return
+    setSubmissions([])
     setLoading(true)
     const res = await fetch(`/api/submissions?program_id=${currentProgram.id}`)
     if (res.ok) setSubmissions(await res.json())

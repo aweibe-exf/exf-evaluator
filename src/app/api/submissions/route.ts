@@ -91,13 +91,28 @@ export async function GET(request: Request) {
   const programId = searchParams.get('program_id')
   const status = searchParams.get('status')
 
+  // Resolve which form_ids are in scope.
+  // NOTE: filtering via .eq('forms.program_id', ...) on a PostgREST left-join does
+  // NOT filter rows — it only nullifies the joined object. We must resolve form IDs
+  // explicitly and filter with .in('form_id', ...) to enforce program isolation.
+  let scopedFormIds: string[] | null = null
+  if (programId && !formId) {
+    const { data: programForms } = await supabase
+      .from('forms')
+      .select('id')
+      .eq('program_id', programId)
+    scopedFormIds = (programForms ?? []).map(f => f.id)
+    // If the program has no forms, return early — no submissions possible
+    if (scopedFormIds.length === 0) return NextResponse.json([])
+  }
+
   let query = supabase
     .from('submissions')
     .select('*, forms(name, program_id, settings)')
     .order('submitted_at', { ascending: false })
 
   if (formId) query = query.eq('form_id', formId)
-  if (programId) query = query.eq('forms.program_id', programId)
+  if (scopedFormIds) query = query.in('form_id', scopedFormIds)
   // 'flagged' is stored in metadata.flagged, not the status enum
   if (status === 'flagged') {
     query = query.filter('metadata->>flagged', 'eq', 'true')

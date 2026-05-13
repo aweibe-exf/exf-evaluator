@@ -24,6 +24,8 @@ export function DashboardClient({ userId }: { userId?: string }) {
 
   useEffect(() => {
     if (!currentProgram) { setLoading(false); return }
+    setStats(null)
+    setRecentForms([])
     setLoading(true)
 
     async function fetchStats() {
@@ -31,20 +33,35 @@ export function DashboardClient({ userId }: { userId?: string }) {
       const supabase = createClient()
       const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
 
-      const [{ count: activeForms }, { count: totalSubs }, { count: monthSubs }, { data: forms }] = await Promise.all([
+      // Fetch forms for this program first — used for counts and recent list.
+      // All submission counts must be scoped to this program's form IDs to avoid
+      // cross-program data leakage (filtering via joined table columns is unreliable
+      // in PostgREST without !inner, and even then can be unpredictable).
+      const [{ count: activeForms }, { data: forms }] = await Promise.all([
         supabase.from('forms').select('*', { count: 'exact', head: true })
           .eq('program_id', currentProgram.id).eq('status', 'active'),
-        supabase.from('submissions').select('*', { count: 'exact', head: true })
-          .eq('status', 'submitted'),
-        supabase.from('submissions').select('*', { count: 'exact', head: true })
-          .eq('status', 'submitted').gte('submitted_at', monthStart),
         supabase.from('forms').select('id, name, status, updated_at')
           .eq('program_id', currentProgram.id)
           .order('updated_at', { ascending: false })
           .limit(6),
       ])
 
-      setStats({ activeForms: activeForms ?? 0, totalSubmissions: totalSubs ?? 0, submissionsThisMonth: monthSubs ?? 0 })
+      const formIds = (forms ?? []).map(f => f.id)
+
+      let totalSubs = 0
+      let monthSubs = 0
+      if (formIds.length > 0) {
+        const [{ count: t }, { count: m }] = await Promise.all([
+          supabase.from('submissions').select('*', { count: 'exact', head: true })
+            .in('form_id', formIds).eq('status', 'submitted'),
+          supabase.from('submissions').select('*', { count: 'exact', head: true })
+            .in('form_id', formIds).eq('status', 'submitted').gte('submitted_at', monthStart),
+        ])
+        totalSubs = t ?? 0
+        monthSubs = m ?? 0
+      }
+
+      setStats({ activeForms: activeForms ?? 0, totalSubmissions: totalSubs, submissionsThisMonth: monthSubs })
       setRecentForms(forms ?? [])
       setLoading(false)
     }
