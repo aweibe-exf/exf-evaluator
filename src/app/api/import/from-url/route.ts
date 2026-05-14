@@ -13,8 +13,59 @@ const schema = z.object({
 
 const anthropic = new Anthropic()
 
-// Cap HTML sent to Claude — most forms are well under this
-const MAX_HTML_CHARS = 80_000
+const MAX_CONTENT_CHARS = 80_000
+
+/**
+ * JotForm and Google Forms render via JavaScript — their form data lives inside
+ * <script> tags, not in HTML form elements. Stripping scripts (as a generic HTML
+ * cleaner would) throws away everything useful.
+ *
+ * This function pulls out the highest-signal content to send Claude:
+ * 1. Platform-specific embedded data blobs (JotForm JF.options, Google FB_PUBLIC_LOAD_DATA_)
+ * 2. Any script blocks that mention "question", "field", or "form"
+ * 3. Stripped HTML for everything else
+ */
+function buildExtractionContent(html: string, url: string): string {
+  const parts: string[] = []
+
+  // ── JotForm: form data is in window.JF / JF.options ───────────────────────
+  // Matches: JF.options = {...}  or  window.JF={...}
+  const jfOptionsMatch = html.match(/JF\s*(?:\.\s*options)?\s*=\s*(\{[\s\S]{50,200000})/i)
+  if (jfOptionsMatch) {
+    // Grab up to 40k chars — enough for large forms
+    parts.push('=== JotForm embedded data (JF.options) ===\n' + jfOptionsMatch[1].slice(0, 40_000))
+  }
+
+  // ── Google Forms: FB_PUBLIC_LOAD_DATA_ ────────────────────────────────────
+  const gfMatch = html.match(/FB_PUBLIC_LOAD_DATA_\s*=\s*([\s\S]+?);\s*<\/script>/i)
+  if (gfMatch) {
+    parts.push('=== Google Forms embedded data (FB_PUBLIC_LOAD_DATA_) ===\n' + gfMatch[1].slice(0, 40_000))
+  }
+
+  // ── Generic: any script block referencing questions/fields ────────────────
+  if (parts.length === 0) {
+    const scriptPattern = /<script[^>]*>([\s\S]*?)<\/script>/gi
+    let m: RegExpExecArray | null
+    while ((m = scriptPattern.exec(html)) !== null) {
+      const content = m[1]
+      if (/question|field|survey|form/i.test(content) && content.length > 100) {
+        parts.push('=== Script block ===\n' + content.slice(0, 10_000))
+        if (parts.join('').length > 40_000) break
+      }
+    }
+  }
+
+  // ── Stripped HTML (always included as fallback) ───────────────────────────
+  const strippedHtml = html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .slice(0, parts.length > 0 ? 20_000 : 60_000)  // give more room when no script data found
+
+  parts.push('=== Page HTML ===\n' + strippedHtml)
+
+  return parts.join('\n\n').slice(0, MAX_CONTENT_CHARS)
+}
 
 async function extractFormFromHtml(url: string, html: string): Promise<{
   title: string
@@ -24,24 +75,33 @@ async function extractFormFromHtml(url: string, html: string): Promise<{
     fields: Array<Record<string, unknown>>
   }>
 }> {
-  // Strip script/style tags and compress whitespace to reduce token count
-  const cleaned = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .slice(0, MAX_HTML_CHARS)
+  const content = buildExtractionContent(html, url)
 
-  const prompt = `You are extracting a form's structure from HTML so it can be recreated in Extension Pulse.
+  const prompt = `You are extracting a form's structure from a web page so it can be recreated in Extension Pulse.
 
 Source URL: ${url}
 
-HTML:
-${cleaned}
+IMPORTANT: Many form platforms (JotForm, Google Forms, Typeform) render via JavaScript.
+The actual form data is often embedded inside <script> tags as JSON or JavaScript objects —
+NOT as visible HTML <input> / <select> elements. Look carefully at any "JotForm embedded data",
+"Google Forms embedded data", or "Script block" sections in the content below.
 
-Return ONLY a valid JSON object (no markdown, no explanation) with this exact shape:
+For JotForm: questions are in JF.options.questions — a JSON object keyed by question ID.
+  Each question has: type (control_textbox, control_radio, control_checkbox, control_dropdown,
+  control_matrix, control_rating, control_email, control_number, control_date, control_head, etc.),
+  text (the question label), required ("Yes"/"No"), and answers (options for choice fields).
+
+For Google Forms: FB_PUBLIC_LOAD_DATA_ is a nested array. Questions are in index 1, each with
+  a title and type code (0=short text, 1=long text, 2=single choice, 3=dropdown, 4=multiple choice,
+  5=linear scale, 7=grid/matrix, 9=date).
+
+Page content:
+${content}
+
+Return ONLY a valid JSON object with this shape:
 
 {
-  "title": "Form title here",
+  "title": "Form title",
   "pages": [
     {
       "id": "page-1",
@@ -61,32 +121,25 @@ Return ONLY a valid JSON object (no markdown, no explanation) with this exact sh
   ]
 }
 
-Field type rules:
-- Short answer / single-line text → "short_text"
-- Paragraph / multi-line text → "long_text"
-- Radio buttons / pick one → "single_choice"
-- Checkboxes / select all that apply → "multiple_choice"
-- Dropdown select → "dropdown"
-- Number input → "number"
-- Date picker → "date"
-- Email → "email"
-- Linear scale / star rating → "rating"
-- Grid / matrix (rows × columns) → "matrix"
-- Section title / heading → "section_header"
-- Instructions / description text → "instructional_text"
+Field type mapping:
+- Short answer / single-line / control_textbox / control_email → use "short_text" or "email"
+- Paragraph / long text / control_textarea → "long_text"
+- Radio buttons / pick one / control_radio → "single_choice"
+- Checkboxes / select all / control_checkbox → "multiple_choice"
+- Dropdown / control_dropdown → "dropdown"
+- Number / control_number → "number"
+- Date / control_date → "date"
+- Rating / scale / control_rating / control_scale → "rating"
+- Matrix / grid / control_matrix → "matrix" (include matrixRows and matrixColumns arrays)
+- Section heading / control_head / page header → "section_header"
+- Instructions / description → "instructional_text"
 
-For choice fields (single_choice, multiple_choice, dropdown), populate "options":
-[{"id": "opt-1", "label": "Option text", "value": "option_text_slug"}]
+For choice fields, populate "options": [{"id":"opt-1","label":"Option","value":"option_slug"}]
+For matrix: add "matrixRows":[{"id":"row-1","label":"..."}], "matrixColumns":[{"id":"col-1","label":"..."}]
 
-For matrix fields, also include:
-"matrixRows": [{"id": "row-1", "label": "Row label"}],
-"matrixColumns": [{"id": "col-1", "label": "Column label"}],
-"matrixType": "radio"
-
-Use sequential IDs: field-1, field-2, field-3 ... and opt-1, opt-2 ...
-Set "required": true only for questions explicitly marked as required.
-Omit fields that are purely decorative (progress bars, submit buttons, CAPTCHA).
-Return ONLY valid JSON.`
+Use sequential IDs: field-1, field-2 ... opt-1, opt-2 ...
+Skip: submit buttons, CAPTCHA, progress bars, hidden system fields.
+Return ONLY valid JSON, no markdown fences.`
 
   const msg = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
