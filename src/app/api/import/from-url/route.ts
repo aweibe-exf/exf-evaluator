@@ -16,55 +16,48 @@ const anthropic = new Anthropic()
 const MAX_CONTENT_CHARS = 150_000
 
 /**
- * JotForm and Google Forms render via JavaScript — their form data lives inside
- * <script> tags, not in HTML form elements. Stripping scripts (as a generic HTML
- * cleaner would) throws away everything useful.
+ * JotForm and Google Forms render via JavaScript — the form data lives in
+ * <script> tags, not in HTML <input>/<select> elements.
  *
- * This function pulls out the highest-signal content to send Claude:
- * 1. Platform-specific embedded data blobs (JotForm JF.options, Google FB_PUBLIC_LOAD_DATA_)
- * 2. Any script blocks that mention "question", "field", or "form"
- * 3. Stripped HTML for everything else
+ * Strategy: extract ALL script blocks, rank by how many form-related keywords
+ * they contain, and send the most relevant ones to Claude. This works regardless
+ * of the exact variable name the platform uses (JF.options, JFForm, etc.).
  */
 function buildExtractionContent(html: string, url: string): string {
-  const parts: string[] = []
-
-  // ── JotForm: form data is in window.JF / JF.options ───────────────────────
-  // Matches: JF.options = {...}  or  window.JF={...}
-  const jfOptionsMatch = html.match(/JF\s*(?:\.\s*options)?\s*=\s*(\{[\s\S]{50,200000})/i)
-  if (jfOptionsMatch) {
-    // Grab up to 40k chars — enough for large forms
-    parts.push('=== JotForm embedded data (JF.options) ===\n' + jfOptionsMatch[1].slice(0, 100_000))
+  // Collect all non-trivial script blocks
+  const scripts: { content: string; score: number }[] = []
+  const scriptPattern = /<script[^>]*>([\s\S]*?)<\/script>/gi
+  let m: RegExpExecArray | null
+  while ((m = scriptPattern.exec(html)) !== null) {
+    const content = m[1].trim()
+    if (content.length < 50) continue
+    // Score by count of form-relevant keywords
+    const score = (content.match(/question|field|choice|option|label|survey|answer|matrix|required|checkbox|radio|dropdown|textbox|textarea/gi) ?? []).length
+    scripts.push({ content, score })
   }
 
-  // ── Google Forms: FB_PUBLIC_LOAD_DATA_ ────────────────────────────────────
-  const gfMatch = html.match(/FB_PUBLIC_LOAD_DATA_\s*=\s*([\s\S]+?);\s*<\/script>/i)
-  if (gfMatch) {
-    parts.push('=== Google Forms embedded data (FB_PUBLIC_LOAD_DATA_) ===\n' + gfMatch[1].slice(0, 40_000))
+  // Sort highest-signal first
+  scripts.sort((a, b) => b.score - a.score)
+
+  // Build script section: take scripts until we hit ~120k chars
+  const scriptParts: string[] = []
+  let scriptBudget = 120_000
+  for (const { content } of scripts) {
+    if (scriptBudget <= 0) break
+    const chunk = content.slice(0, scriptBudget)
+    scriptParts.push(chunk)
+    scriptBudget -= chunk.length
   }
 
-  // ── Generic: any script block referencing questions/fields ────────────────
-  if (parts.length === 0) {
-    const scriptPattern = /<script[^>]*>([\s\S]*?)<\/script>/gi
-    let m: RegExpExecArray | null
-    while ((m = scriptPattern.exec(html)) !== null) {
-      const content = m[1]
-      if (/question|field|survey|form/i.test(content) && content.length > 100) {
-        parts.push('=== Script block ===\n' + content.slice(0, 10_000))
-        if (parts.join('').length > 40_000) break
-      }
-    }
-  }
-
-  // ── Stripped HTML (always included as fallback) ───────────────────────────
+  // Stripped HTML as a supplementary signal (page title, visible labels, etc.)
   const strippedHtml = html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
     .replace(/\s{2,}/g, ' ')
-    .slice(0, parts.length > 0 ? 10_000 : 60_000)  // minimal HTML when we have script data
+    .slice(0, 15_000)
 
-  parts.push('=== Page HTML ===\n' + strippedHtml)
-
-  return parts.join('\n\n').slice(0, MAX_CONTENT_CHARS)
+  const scriptSection = scriptParts.join('\n\n--- next script block ---\n\n')
+  return `=== SCRIPT BLOCKS (ranked by form-data relevance) ===\n${scriptSection}\n\n=== PAGE HTML ===\n${strippedHtml}`.slice(0, MAX_CONTENT_CHARS)
 }
 
 async function extractFormFromHtml(url: string, html: string): Promise<{
