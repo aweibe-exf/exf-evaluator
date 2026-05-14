@@ -13,7 +13,7 @@ const schema = z.object({
 
 const anthropic = new Anthropic()
 
-const MAX_CONTENT_CHARS = 80_000
+const MAX_CONTENT_CHARS = 150_000
 
 /**
  * JotForm and Google Forms render via JavaScript — their form data lives inside
@@ -33,7 +33,7 @@ function buildExtractionContent(html: string, url: string): string {
   const jfOptionsMatch = html.match(/JF\s*(?:\.\s*options)?\s*=\s*(\{[\s\S]{50,200000})/i)
   if (jfOptionsMatch) {
     // Grab up to 40k chars — enough for large forms
-    parts.push('=== JotForm embedded data (JF.options) ===\n' + jfOptionsMatch[1].slice(0, 40_000))
+    parts.push('=== JotForm embedded data (JF.options) ===\n' + jfOptionsMatch[1].slice(0, 100_000))
   }
 
   // ── Google Forms: FB_PUBLIC_LOAD_DATA_ ────────────────────────────────────
@@ -60,7 +60,7 @@ function buildExtractionContent(html: string, url: string): string {
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
     .replace(/\s{2,}/g, ' ')
-    .slice(0, parts.length > 0 ? 20_000 : 60_000)  // give more room when no script data found
+    .slice(0, parts.length > 0 ? 10_000 : 60_000)  // minimal HTML when we have script data
 
   parts.push('=== Page HTML ===\n' + strippedHtml)
 
@@ -143,7 +143,7 @@ Return ONLY valid JSON, no markdown fences.`
 
   const msg = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    max_tokens: 8192,
     messages: [{ role: 'user', content: prompt }],
   })
 
