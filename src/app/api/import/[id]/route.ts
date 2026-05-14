@@ -41,6 +41,61 @@ function normalizeNumeric(raw: string): number | string {
   return raw
 }
 
+/**
+ * Data-only import: insert submissions into an EXISTING form.
+ * column_mappings contains { csvColumn: formFieldId } plus _* internal keys.
+ */
+async function importDataToExistingForm(
+  service: ReturnType<typeof createServiceClient>,
+  job: { id: string; program_id: string; row_count: number | null; preview_data: Json | null },
+  columnMappings: Record<string, string>,
+  userId: string,
+) {
+  const targetFormId = columnMappings._target_form_id
+  if (!targetFormId) return
+
+  const periodEnd = columnMappings._period_end
+  const periodStart = columnMappings._period_start
+  const submittedAt = periodEnd
+    ? new Date(periodEnd).toISOString()
+    : periodStart
+      ? new Date(periodStart).toISOString()
+      : new Date().toISOString()
+
+  // Only real column→fieldId mappings (skip _* internal keys and "skip" values)
+  const colToFieldId: Record<string, string> = {}
+  for (const [k, v] of Object.entries(columnMappings)) {
+    if (!k.startsWith('_') && v && v !== 'skip') colToFieldId[k] = v
+  }
+
+  const allRows = (job.preview_data ?? []) as Record<string, string>[]
+  if (allRows.length === 0) return
+
+  const submissions = allRows.map(row => {
+    const data: Record<string, unknown> = {}
+    for (const [col, fieldId] of Object.entries(colToFieldId)) {
+      data[fieldId] = row[col] ?? ''
+    }
+    // Try to pull respondent email from any column mapped to a field named 'email'
+    // (best-effort — no harm if not found)
+    const emailCol = Object.entries(colToFieldId).find(([, fid]) => fid.includes('email'))?.[0]
+    const respondentEmail = emailCol ? (row[emailCol] ?? null) : null
+    return {
+      form_id: targetFormId,
+      data: data as unknown as Json,
+      status: 'submitted' as const,
+      submitted_at: submittedAt,
+      submitted_by: userId,
+      respondent_email: respondentEmail || null,
+      metadata: { importJobId: job.id, importedRow: true } as unknown as Json,
+    }
+  })
+
+  for (let i = 0; i < submissions.length; i += 100) {
+    await service.from('submissions').insert(submissions.slice(i, i + 100))
+  }
+}
+
 async function createFormFromImport(
   service: ReturnType<typeof createServiceClient>,
   job: { id: string; file_name: string; program_id: string; detected_schema: Json | null; row_count: number | null; preview_data: Json | null },
@@ -159,19 +214,25 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const { data: job } = await service.from('import_jobs').select('program_id, status').eq('id', id).single()
   if (!job) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // For complete imports, retract the form and all its imported submissions
+  // For complete imports, retract what was created
   if (job.status === 'complete') {
-    // Find the form created from this import job (settings->importJobId = id)
-    const { data: forms } = await service
-      .from('forms')
-      .select('id')
-      .filter('settings->>importJobId', 'eq', id)
+    const mappings = ((await service.from('import_jobs').select('column_mappings').eq('id', id).single()).data?.column_mappings ?? {}) as Record<string, string>
+    const isDataOnly = mappings._import_mode === 'data_only'
 
-    for (const form of forms ?? []) {
-      // Delete all submissions for this form (they were all imported)
-      await service.from('submissions').delete().eq('form_id', form.id)
-      // Delete the form itself
-      await service.from('forms').delete().eq('id', form.id)
+    if (isDataOnly) {
+      // Data-only: delete only the submissions that were imported (identified by metadata.importJobId)
+      await service.from('submissions').delete().filter('metadata->>importJobId', 'eq', id)
+    } else {
+      // Full import: find and delete the created form + its submissions
+      const { data: forms } = await service
+        .from('forms')
+        .select('id')
+        .filter('settings->>importJobId', 'eq', id)
+
+      for (const form of forms ?? []) {
+        await service.from('submissions').delete().eq('form_id', form.id)
+        await service.from('forms').delete().eq('id', form.id)
+      }
     }
   }
 
@@ -227,12 +288,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data, error } = await service.from('import_jobs').update(update).eq('id', id).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Auto-create a form when import is confirmed
+  // When import is confirmed, create form + submissions (full) or just submissions (data-only)
   if (parsed.data.status === 'complete') {
     const finalMappings = (parsed.data.column_mappings ?? (job.column_mappings ?? {})) as Record<string, string>
-    await createFormFromImport(service, { id, ...job }, finalMappings, user.id).catch(() => {
-      // Non-fatal — form creation failure shouldn't block the import completion
-    })
+    const isDataOnly = finalMappings._import_mode === 'data_only'
+    if (isDataOnly) {
+      await importDataToExistingForm(service, { id, ...job }, finalMappings, user.id).catch(() => {})
+    } else {
+      await createFormFromImport(service, { id, ...job }, finalMappings, user.id).catch(() => {})
+    }
   }
 
   await logAudit(service, {
