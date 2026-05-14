@@ -219,6 +219,7 @@ export async function POST(request: Request) {
     settings: { isImported: true, importedFromUrl: url } as unknown as Json,
     status: 'active',
     created_by: user.id,
+    author_email: user.email ?? null,
   }).select('id, slug').single()
 
   if (formError || !form) {

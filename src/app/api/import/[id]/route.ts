@@ -101,6 +101,7 @@ async function createFormFromImport(
   job: { id: string; file_name: string; program_id: string; detected_schema: Json | null; row_count: number | null; preview_data: Json | null },
   columnMappings: Record<string, string>,
   userId: string,
+  userEmail: string | null,
 ) {
   const periodType = columnMappings._period_type
   const periodValue = columnMappings._period_value
@@ -144,6 +145,7 @@ async function createFormFromImport(
     settings: formSettings as unknown as Json,
     status: 'active',
     created_by: userId,
+    author_email: userEmail,
   }).select('id').single()
 
   if (formError || !createdForm) {
@@ -295,7 +297,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (isDataOnly) {
       await importDataToExistingForm(service, { id, ...job }, finalMappings, user.id).catch(() => {})
     } else {
-      await createFormFromImport(service, { id, ...job }, finalMappings, user.id).catch(() => {})
+      await createFormFromImport(service, { id, ...job }, finalMappings, user.id, user.email ?? null).catch(() => {})
     }
   }
 
