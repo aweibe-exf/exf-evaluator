@@ -187,6 +187,22 @@ export function FormBuilderClient({ initialForm }: Props) {
     }))
   }
 
+  function moveFieldToPage(fieldId: string, targetPageIndex: number) {
+    updateSchema(prev => {
+      const field = prev.pages[currentPageIndex]?.fields.find(f => f.id === fieldId)
+      if (!field) return prev
+      return {
+        ...prev,
+        pages: prev.pages.map((page, i) => {
+          if (i === currentPageIndex) return { ...page, fields: page.fields.filter(f => f.id !== fieldId) }
+          if (i === targetPageIndex) return { ...page, fields: [...page.fields, field] }
+          return page
+        }),
+      }
+    })
+    if (selectedFieldId === fieldId) setSelectedFieldId(null)
+  }
+
   const cfg = statusConfig[status]
 
   if (previewMode) {
@@ -429,6 +445,9 @@ export function FormBuilderClient({ initialForm }: Props) {
                 setSelectedFieldId(field.id)
                 setRightPanel('field')
               }}
+              allPages={schema.pages}
+              currentPageIndex={currentPageIndex}
+              onMoveFieldToPage={moveFieldToPage}
             />
           </div>
         </div>

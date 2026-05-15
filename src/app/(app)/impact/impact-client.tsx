@@ -51,6 +51,7 @@ export function ImpactClient() {
   const [generating, setGenerating] = useState(false)
   const [dateFrom, setDateFrom] = useState(() => format(subDays(new Date(), 90), 'yyyy-MM-dd'))
   const [dateTo, setDateTo] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+  const [includePulse, setIncludePulse] = useState(true)
   const [periodView, setPeriodView] = useState<'daily' | 'period'>('daily')
 
   const fetchData = useCallback(async () => {
@@ -131,6 +132,7 @@ export function ImpactClient() {
           date_from: dateFrom,
           date_to: dateTo,
           summary_type: summaryType,
+          include_pulse: includePulse,
         }),
       })
       if (res.ok) {
@@ -285,6 +287,15 @@ export function ImpactClient() {
                 </button>
               ))}
             </div>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includePulse}
+                onChange={e => setIncludePulse(e.target.checked)}
+                className="h-3.5 w-3.5 rounded text-orange-600 border-gray-300 focus:ring-orange-500"
+              />
+              <span className="text-[12px] text-gray-600">Include Pulse?</span>
+            </label>
             <Button
               size="sm"
               onClick={generateSummary}

@@ -11,6 +11,42 @@ const updateSchema = z.object({
   reviewer_comment: z.string().max(2000).nullable().optional(),
 })
 
+export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createClient()
+  const service = createServiceClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Verify program admin access before hard-deleting
+  const { data: submissionCheck } = await supabase
+    .from('submissions')
+    .select('id, forms(program_id)')
+    .eq('id', id)
+    .single()
+
+  if (!submissionCheck) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  const programId = (submissionCheck.forms as { program_id: string } | null)?.program_id
+  if (programId) {
+    const { data: membership } = await supabase
+      .from('program_memberships')
+      .select('role')
+      .eq('program_id', programId)
+      .eq('user_id', user.id)
+      .single()
+
+    const role = membership?.role ?? null
+    const isAdmin = role === 'super_admin' || role === 'program_admin'
+    if (!isAdmin) return NextResponse.json({ error: 'Only program admins can withdraw submissions' }, { status: 403 })
+  }
+
+  const { error } = await service.from('submissions').delete().eq('id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({ success: true })
+}
+
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()

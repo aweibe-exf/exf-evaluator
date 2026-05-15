@@ -18,7 +18,7 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical, Trash2, Copy } from 'lucide-react'
+import { GripVertical, Trash2, Copy, MoveRight } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import { cn } from '@/lib/utils'
 import type { FormPage, FormField } from '@/types/forms'
@@ -205,12 +205,14 @@ function FieldPreview({ field }: { field: FormField }) {
   )
 }
 
-function SortableFieldCard({ field, isSelected, onSelect, onDelete, onDuplicate }: {
+function SortableFieldCard({ field, isSelected, onSelect, onDelete, onDuplicate, otherPages, onMoveToPage }: {
   field: FormField
   isSelected: boolean
   onSelect: () => void
   onDelete: () => void
   onDuplicate: () => void
+  otherPages: Array<{ id: string; title: string; index: number }>
+  onMoveToPage: (targetIndex: number) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id })
 
@@ -255,6 +257,28 @@ function SortableFieldCard({ field, isSelected, onSelect, onDelete, onDuplicate 
         className="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
         onClick={e => e.stopPropagation()}
       >
+        {otherPages.length > 0 && (
+          <div className="relative group/move">
+            <button
+              className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
+              aria-label="Move to page"
+            >
+              <MoveRight className="h-3 w-3" aria-hidden="true" />
+            </button>
+            <div className="absolute right-0 top-full mt-0.5 z-10 min-w-[120px] rounded-lg border border-gray-200 bg-white shadow-lg py-1 hidden group-hover/move:block group-focus-within/move:block">
+              <p className="text-[10px] text-gray-400 px-2.5 pb-1 font-medium uppercase tracking-wide">Move to</p>
+              {otherPages.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => onMoveToPage(p.index)}
+                  className="block w-full text-left px-2.5 py-1 text-[12px] text-gray-700 hover:bg-gray-50"
+                >
+                  {p.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <button
           onClick={onDuplicate}
           className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400"
@@ -292,6 +316,9 @@ interface Props {
   isOnlyPage: boolean
   onDeletePage: () => void
   onAddField: (field: FormField) => void
+  allPages: FormPage[]
+  currentPageIndex: number
+  onMoveFieldToPage: (fieldId: string, targetPageIndex: number) => void
 }
 
 export function FormCanvas({
@@ -305,7 +332,13 @@ export function FormCanvas({
   isOnlyPage,
   onDeletePage,
   onAddField,
+  allPages,
+  currentPageIndex,
+  onMoveFieldToPage,
 }: Props) {
+  const otherPages = allPages
+    .map((p, i) => ({ id: p.id, title: p.title || `Page ${i + 1}`, index: i }))
+    .filter((_, i) => i !== currentPageIndex)
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -367,6 +400,8 @@ export function FormCanvas({
                 onSelect={() => onSelectField(field.id)}
                 onDelete={() => onDeleteField(field.id)}
                 onDuplicate={() => duplicateField(field)}
+                otherPages={otherPages}
+                onMoveToPage={(targetIndex) => onMoveFieldToPage(field.id, targetIndex)}
               />
             ))}
           </div>

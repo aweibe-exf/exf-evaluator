@@ -14,6 +14,7 @@ const schema = z.object({
   // 'form_period': skip submitted_at filter — use form period settings to scope data
   // 'submitted_at': default — filter by when submissions were actually submitted
   date_mode: z.enum(['submitted_at', 'form_period']).default('submitted_at'),
+  include_pulse: z.boolean().default(true),
 })
 
 const client = new Anthropic()
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
 
-  const { program_id, form_id, form_ids, date_from, date_to, summary_type, date_mode } = parsed.data
+  const { program_id, form_id, form_ids, date_from, date_to, summary_type, date_mode, include_pulse } = parsed.data
 
   // Fetch program name
   const { data: program } = await supabase.from('programs').select('name').eq('id', program_id).single()
@@ -180,15 +181,17 @@ export async function POST(request: Request) {
     .gte('ends_at', date_from)
     .order('starts_at', { ascending: true })
 
-  // Fetch Pulse field notes that overlap the report date range
-  const { data: pulseNotes } = await service
-    .from('pulse_notes')
-    .select('title, content, source, note_date, attachments')
-    .eq('program_id', program_id)
-    .gte('note_date', date_from)
-    .lte('note_date', date_to)
-    .order('note_date', { ascending: true })
-    .limit(100)
+  // Fetch Pulse field notes that overlap the report date range (only when requested)
+  const { data: pulseNotes } = include_pulse
+    ? await service
+        .from('pulse_notes')
+        .select('title, content, source, note_date, attachments')
+        .eq('program_id', program_id)
+        .gte('note_date', date_from)
+        .lte('note_date', date_to)
+        .order('note_date', { ascending: true })
+        .limit(100)
+    : { data: null }
 
   const pulseContext = (pulseNotes && pulseNotes.length > 0)
     ? `\n\nPULSE FIELD NOTES (${pulseNotes.length} entries from ${date_from} to ${date_to}):\nThese are qualitative observations recorded by program staff in the field. Incorporate relevant insights where they support or enrich the analysis.\n\n` +

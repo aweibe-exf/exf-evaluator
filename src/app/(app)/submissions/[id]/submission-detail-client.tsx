@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { ArrowLeft, Flag, CheckCircle, RotateCcw, UserRoundCog, Pencil, Save, X, Send, MessageSquare } from 'lucide-react'
+import { ArrowLeft, Flag, CheckCircle, RotateCcw, UserRoundCog, Pencil, Save, X, Send, MessageSquare, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -266,6 +266,8 @@ export function SubmissionDetailClient({ submission: initial, schema, currentRol
   const [reviewerComment, setReviewerComment] = useState<string>((meta.reviewerComment as string) ?? '')
   const [savingComment, setSavingComment] = useState(false)
   const [sendingBack, setSendingBack] = useState(false)
+  const [withdrawConfirm, setWithdrawConfirm] = useState(false)
+  const [withdrawing, setWithdrawing] = useState(false)
   const feedbackSentAt = meta.feedbackSentAt as string | undefined
   const feedbackSentBy = meta.feedbackSentBy as string | undefined
   const displayEmail = submission.respondent_email ?? (meta.importedRow ? 'Imported' : 'Anonymous')
@@ -377,6 +379,20 @@ export function SubmissionDetailClient({ submission: initial, schema, currentRol
     }
   }
 
+  async function handleWithdraw() {
+    setWithdrawing(true)
+    const res = await fetch(`/api/submissions/${submission.id}`, { method: 'DELETE' })
+    setWithdrawing(false)
+    if (res.ok) {
+      toast.success('Submission withdrawn and permanently deleted')
+      router.push('/submissions')
+    } else {
+      const err = await res.json().catch(() => ({}))
+      toast.error(typeof err.error === 'string' ? err.error : 'Failed to withdraw submission')
+      setWithdrawConfirm(false)
+    }
+  }
+
   return (
     <div className="max-w-3xl px-8 py-8">
       {/* Back */}
@@ -442,7 +458,7 @@ export function SubmissionDetailClient({ submission: initial, schema, currentRol
           )}
 
           {/* Reassign */}
-          <div className="mb-6">
+          <div className="mb-4">
             {!reassigning ? (
               <Button
                 variant="ghost" size="sm"
@@ -474,6 +490,42 @@ export function SubmissionDetailClient({ submission: initial, schema, currentRol
               </div>
             )}
           </div>
+
+          {/* Withdraw */}
+          {canEdit && (
+            <div className="mb-6">
+              {!withdrawConfirm ? (
+                <Button
+                  variant="ghost" size="sm"
+                  className="gap-1.5 text-[13px] h-8 text-red-400 hover:text-red-600 hover:bg-red-50"
+                  onClick={() => setWithdrawConfirm(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Withdraw submission
+                </Button>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                  <p className="text-[12px] text-red-700 flex-1">This will permanently delete all response data. Cannot be undone.</p>
+                  <Button
+                    size="sm"
+                    className="h-7 text-[12px] bg-red-600 hover:bg-red-700 flex-shrink-0"
+                    onClick={handleWithdraw}
+                    disabled={withdrawing}
+                    aria-busy={withdrawing}
+                  >
+                    {withdrawing ? 'Withdrawing…' : 'Confirm withdraw'}
+                  </Button>
+                  <Button
+                    variant="ghost" size="sm"
+                    className="h-7 text-[12px] flex-shrink-0"
+                    onClick={() => setWithdrawConfirm(false)}
+                    disabled={withdrawing}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 

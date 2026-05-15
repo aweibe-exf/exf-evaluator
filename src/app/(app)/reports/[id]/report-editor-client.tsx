@@ -4,16 +4,30 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import Image from '@tiptap/extension-image'
+import ImageBase from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import Typography from '@tiptap/extension-typography'
+
+// Extend Image to support an explicit width attribute for in-editor resizing
+const Image = ImageBase.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: null,
+        parseHTML: el => el.getAttribute('width') ?? null,
+        renderHTML: attrs => attrs.width ? { width: attrs.width, style: `width:${attrs.width}px;max-width:100%` } : {},
+      },
+    }
+  },
+})
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   ArrowLeft, Save, Sparkles, Bold, Italic, List, ListOrdered,
   Heading2, Heading3, Quote, Minus, Calendar, CheckSquare, Square,
   Download, CheckCircle2, RotateCcw, BarChart2, ChevronDown, ChevronUp,
-  ImagePlus, Loader2,
+  ImagePlus, Loader2, Maximize2,
 } from 'lucide-react'
 import { format, subDays } from 'date-fns'
 import {
@@ -398,6 +412,7 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
   const [status, setStatus] = useState<'draft' | 'final'>(initialReport.status as 'draft' | 'final' ?? 'draft')
   const [togglingStatus, setTogglingStatus] = useState(false)
   const [summaryType, setSummaryType] = useState<SummaryType>('key_themes')
+  const [includePulse, setIncludePulse] = useState(true)
 
   // Form multi-select — default: all forms selected
   const [selectedFormIds, setSelectedFormIds] = useState<Set<string>>(
@@ -428,11 +443,13 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
     setInsertingVizId(viz.id)
     try {
       const png = await chartToPng(viz.config)
-      const html = `<figure style="margin:1.5em 0;text-align:center;">
-        <img src="${png}" alt="${viz.title}" style="max-width:100%;border-radius:8px;border:1px solid #e4e4e7;" />
-        <figcaption style="font-size:12px;color:#71717a;margin-top:6px;">${viz.title}${viz.description ? ` — ${viz.description}` : ''}</figcaption>
-      </figure>`
-      editor?.chain().focus().insertContentAt(editor.state.doc.content.size, html).run()
+      // Insert as an image node directly (avoids HTML-parsing issues with <figure>)
+      editor?.chain().focus()
+        .insertContentAt(editor.state.doc.content.size, [
+          { type: 'image', attrs: { src: png, alt: viz.title } },
+          { type: 'paragraph', content: [{ type: 'text', text: `${viz.title}${viz.description ? ` — ${viz.description}` : ''}` }] },
+        ])
+        .run()
       setDirty(true)
       toast.success(`"${viz.title}" inserted into report`)
     } catch {
@@ -562,10 +579,8 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
           date_from: dateFrom,
           date_to: dateTo,
           summary_type: summaryType,
-          // In period mode, submissions were imported with submitted_at set to the
-          // period end date (or today for older imports). Tell the API to match by
-          // the form's assigned period rather than submitted_at timestamp.
           date_mode: dateMode === 'period' ? 'form_period' : 'submitted_at',
+          include_pulse: includePulse,
         }),
       })
       if (res.ok) {
@@ -645,6 +660,22 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
               <ToolbarButton onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Numbered list"><ListOrdered className={iconSize} /></ToolbarButton>
               <ToolbarButton onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} title="Quote"><Quote className={iconSize} /></ToolbarButton>
               <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Divider"><Minus className={iconSize} /></ToolbarButton>
+              {editor.isActive('image') && (
+                <>
+                  <div className="w-px h-4 bg-gray-200 mx-1" aria-hidden="true" />
+                  <span className="text-[11px] text-gray-400 flex items-center gap-0.5 px-1"><Maximize2 className="h-3 w-3" />Resize:</span>
+                  {([['Small', 280], ['Medium', 420], ['Large', 560], ['Full', null]] as const).map(([label, w]) => (
+                    <ToolbarButton
+                      key={label}
+                      onClick={() => editor.chain().focus().updateAttributes('image', { width: w }).run()}
+                      title={`Resize to ${label}`}
+                      active={false}
+                    >
+                      <span className="text-[10px] font-medium">{label}</span>
+                    </ToolbarButton>
+                  ))}
+                </>
+              )}
             </div>
           )}
           <div className="flex-1 overflow-y-auto bg-white">
@@ -707,6 +738,18 @@ export function ReportEditorClient({ initialReport, forms }: Props) {
                 )}
               </div>
             )}
+
+            {/* Include Pulse toggle */}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includePulse}
+                onChange={e => setIncludePulse(e.target.checked)}
+                className="h-3.5 w-3.5 rounded text-orange-600 border-gray-300 focus:ring-orange-500"
+              />
+              <span className="text-[12px] text-gray-700 font-medium">Include Pulse?</span>
+              <span className="text-[11px] text-gray-400">(qualitative field notes)</span>
+            </label>
 
             {/* Date source toggle */}
             <div>
