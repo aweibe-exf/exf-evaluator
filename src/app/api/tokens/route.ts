@@ -45,8 +45,42 @@ export async function POST(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Send email
+  // Auto-enroll the invited email as a viewer in this program
   const programName = (form.programs as { name: string } | null)?.name ?? 'Extension Pulse'
+  let accountInviteUrl: string | undefined
+
+  try {
+    // Check if the email already has an auth account
+    const { data: existingUsers } = await service.auth.admin.listUsers()
+    const existingUser = existingUsers?.users.find(u => u.email === email)
+
+    if (existingUser) {
+      // User exists — just upsert the viewer membership
+      await service.from('program_memberships').upsert(
+        { program_id: form.program_id, user_id: existingUser.id, role: 'viewer' },
+        { onConflict: 'program_id,user_id', ignoreDuplicates: true }
+      )
+    } else {
+      // New user — generate an invite link and create viewer membership
+      const { data: linkData, error: linkError } = await service.auth.admin.generateLink({
+        type: 'invite',
+        email,
+        options: { redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3002'}/auth/callback` },
+      })
+      if (!linkError && linkData?.user?.id) {
+        await service.from('program_memberships').insert({
+          program_id: form.program_id,
+          user_id: linkData.user.id,
+          role: 'viewer',
+        })
+        accountInviteUrl = linkData.properties?.action_link
+      }
+    }
+  } catch (e) {
+    console.error('Viewer enrollment failed:', e)
+  }
+
+  // Send email
   try {
     await sendTokenEmail({
       to: email,
@@ -55,6 +89,7 @@ export async function POST(request: Request) {
       token: tokenRow.token,
       formSlug: form.slug,
       expiresAt: tokenRow.expires_at,
+      accountInviteUrl,
     })
     await service.from('submission_tokens').update({ sent_at: new Date().toISOString() }).eq('id', tokenRow.id)
   } catch (e) {

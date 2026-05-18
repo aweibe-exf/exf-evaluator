@@ -10,17 +10,22 @@ interface SendTokenEmailParams {
   token: string
   formSlug: string
   expiresAt: string
+  accountInviteUrl?: string   // included when we're also creating their viewer account
 }
 
 export async function sendTokenEmail(params: SendTokenEmailParams): Promise<void> {
-  const { to, formName, programName, token, formSlug, expiresAt } = params
+  const { to, formName, programName, token, formSlug, expiresAt, accountInviteUrl } = params
   const link = `${APP_URL}/f/${formSlug}?token=${token}`
   const expiry = new Date(expiresAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
   if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN) {
-    console.log(`\n[EMAIL - no Mailgun key set]\nTo: ${to}\nSubject: Your form link — ${formName}\nLink: ${link}\n`)
+    console.log(`\n[EMAIL - no Mailgun key set]\nTo: ${to}\nSubject: Your form link — ${formName}\nLink: ${link}${accountInviteUrl ? `\nAccount setup: ${accountInviteUrl}` : ''}\n`)
     return
   }
+
+  const accountTextBlock = accountInviteUrl
+    ? [``, `You've also been given viewer access to ${programName} so you can track your submission. Set up your account here:`, accountInviteUrl]
+    : []
 
   const text = [
     `You've been invited to complete a form for ${programName}.`,
@@ -30,7 +35,16 @@ export async function sendTokenEmail(params: SendTokenEmailParams): Promise<void
     '',
     `This link is personal to you and expires on ${expiry}.`,
     'Do not share it with others.',
+    ...accountTextBlock,
   ].join('\n')
+
+  const accountHtmlBlock = accountInviteUrl
+    ? `<div style="margin-top:24px;padding:16px;background:#f9f9f9;border-radius:8px;border:1px solid #e5e7eb;">
+  <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:#111;">Viewer account access</p>
+  <p style="margin:0 0 12px;font-size:13px;color:#555;">You've also been given viewer access to <strong>${programName}</strong> so you can track your submission.</p>
+  <a href="${accountInviteUrl}" style="display:inline-block;background:#fff;color:#ea580c;border:1.5px solid #ea580c;padding:8px 18px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;">Set up your account</a>
+</div>`
+    : ''
 
   const html = `
 <!DOCTYPE html>
@@ -41,6 +55,7 @@ export async function sendTokenEmail(params: SendTokenEmailParams): Promise<void
   <a href="${link}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Open form</a>
   <p style="margin-top:24px;font-size:13px;color:#888;">This link is personal to you and expires ${expiry}. Do not share it.</p>
   <p style="font-size:12px;color:#aaa;margin-top:8px;">If the button doesn't work, copy this link: ${link}</p>
+  ${accountHtmlBlock}
 </body>
 </html>`
 
