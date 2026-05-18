@@ -49,24 +49,28 @@ interface NavItem {
   roles?: string[]
 }
 
+const ADMIN_ROLES = ['super_admin', 'program_admin']
+const STAFF_PLUS  = ['super_admin', 'program_admin', 'staff']
+
 const navItems: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Dashboard',           href: '/dashboard',   icon: LayoutDashboard, roles: ADMIN_ROLES },
   {
     label: 'Forms',
     href: '/forms',
     icon: FileText,
+    roles: ADMIN_ROLES,
     children: [
-      { label: 'All Forms', href: '/forms', icon: FolderOpen },
-      { label: 'Templates', href: '/forms/templates', icon: BookOpen },
+      { label: 'All Forms',  href: '/forms',           icon: FolderOpen },
+      { label: 'Templates',  href: '/forms/templates', icon: BookOpen },
     ],
   },
-  { label: 'Submissions', href: '/submissions', icon: Inbox },
-  { label: 'Reports', href: '/reports', icon: FileBarChart2 },
-  { label: 'Impact Dashboard', href: '/impact', icon: BarChart3 },
-  { label: 'Evaluation Sidekick', href: '/sidekick', icon: Sparkles },
-  { label: 'Data Visualizer', href: '/visualizer', icon: PieChart },
-  { label: 'Pulse', href: '/pulse', icon: Radio },
-  { label: 'Files', href: '/files', icon: Paperclip },
+  { label: 'Submissions',         href: '/submissions', icon: Inbox,        roles: STAFF_PLUS },
+  { label: 'Reports',             href: '/reports',     icon: FileBarChart2, roles: ADMIN_ROLES },
+  { label: 'Impact Dashboard',    href: '/impact',      icon: BarChart3,     roles: ADMIN_ROLES },
+  { label: 'Evaluation Sidekick', href: '/sidekick',    icon: Sparkles,      roles: ADMIN_ROLES },
+  { label: 'Data Visualizer',     href: '/visualizer',  icon: PieChart,      roles: STAFF_PLUS },
+  { label: 'Pulse',               href: '/pulse',        icon: Radio,         roles: STAFF_PLUS },
+  { label: 'Files',               href: '/files',        icon: Paperclip,     roles: ADMIN_ROLES },
 ]
 
 const settingsItems: NavItem[] = [
@@ -187,7 +191,7 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
 
       {/* Main nav */}
       <nav className="no-scrollbar flex-1 overflow-y-auto px-3 py-2 space-y-0.5" aria-label="Main navigation">
-        {navItems.map(item => {
+        {navItems.filter(item => !item.roles || (currentRole && item.roles.includes(currentRole))).map(item => {
           if (item.children) {
             const isParentActive = pathname.startsWith(item.href)
             return (
