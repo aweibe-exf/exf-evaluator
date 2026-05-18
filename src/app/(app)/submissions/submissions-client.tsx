@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import type { Database } from '@/types/database'
 import type { FormSettings, FormSchema } from '@/types/forms'
+import { MyTasks } from './my-tasks'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -802,6 +803,9 @@ export function SubmissionsClient() {
           )}
         </div>
       </div>
+
+      {/* To-do: pending form assignments for the logged-in user */}
+      <MyTasks />
 
       {/* Tabs */}
       <div className="flex gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 mb-5 w-fit">
