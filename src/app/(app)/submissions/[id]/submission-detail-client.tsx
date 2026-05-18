@@ -427,7 +427,7 @@ export function SubmissionDetailClient({ submission: initial, schema, currentRol
       {/* Actions */}
       {!editing && (
         <>
-          {displayStatus !== 'reviewed' && displayStatus !== 'flagged' && (
+          {canEdit && displayStatus !== 'reviewed' && displayStatus !== 'flagged' && (
             <div className="flex items-center gap-2 mb-4">
               <Button
                 variant="outline" size="sm"
@@ -445,7 +445,7 @@ export function SubmissionDetailClient({ submission: initial, schema, currentRol
               </Button>
             </div>
           )}
-          {(displayStatus === 'reviewed' || displayStatus === 'flagged') && (
+          {canEdit && (displayStatus === 'reviewed' || displayStatus === 'flagged') && (
             <div className="mb-4">
               <Button
                 variant="ghost" size="sm"
@@ -457,8 +457,8 @@ export function SubmissionDetailClient({ submission: initial, schema, currentRol
             </div>
           )}
 
-          {/* Reassign */}
-          <div className="mb-4">
+          {/* Reassign — admin only */}
+          {canEdit && <div className="mb-4">
             {!reassigning ? (
               <Button
                 variant="ghost" size="sm"
@@ -489,7 +489,7 @@ export function SubmissionDetailClient({ submission: initial, schema, currentRol
                 <Button variant="ghost" size="sm" className="h-8 text-[13px]" onClick={() => setReassigning(false)}>Cancel</Button>
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Withdraw */}
           {canEdit && (

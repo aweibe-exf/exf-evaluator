@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import type { Database } from '@/types/database'
 import type { FormSettings, FormSchema } from '@/types/forms'
 import { MyTasks } from './my-tasks'
+import { createClient } from '@/lib/supabase/client'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -689,7 +690,8 @@ function RespondentLookup({ submissions, forms, onAssigned }: {
 
 export function SubmissionsClient() {
   const router = useRouter()
-  const { currentProgram } = useProgram()
+  const { currentProgram, currentRole } = useProgram()
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [submissions, setSubmissions] = useState<Submission[]>([])
   const [forms, setForms] = useState<FormRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -700,6 +702,13 @@ export function SubmissionsClient() {
   const [bulkAssignOpen, setBulkAssignOpen] = useState(false)
   const [bulkAssignEmail, setBulkAssignEmail] = useState('')
   const [bulkAssignBusy, setBulkAssignBusy] = useState(false)
+
+  // Staff and viewer can only see their own submissions
+  const isRestricted = currentRole === 'staff' || currentRole === 'viewer'
+
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data: { user } }) => setUserEmail(user?.email ?? null))
+  }, [])
 
   const fetchData = useCallback(async () => {
     if (!currentProgram) return
@@ -765,7 +774,12 @@ export function SubmissionsClient() {
     setSelectedIds(prev => prev.size === ids.length ? new Set() : new Set(ids))
   }
 
-  const filtered = submissions
+  // Restricted roles only see their own submissions
+  const visibleSubmissions = isRestricted && userEmail
+    ? submissions.filter(s => s.respondent_email?.toLowerCase() === userEmail.toLowerCase())
+    : submissions
+
+  const filtered = visibleSubmissions
     .filter(s => {
       const email = s.respondent_email?.toLowerCase() ?? ''
       const formName = s.forms?.name?.toLowerCase() ?? ''
@@ -778,9 +792,11 @@ export function SubmissionsClient() {
     })
 
   const tabs: { key: ActiveTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { key: 'list', label: 'All Submissions', icon: List },
-    { key: 'table', label: 'Table View', icon: Table2 },
-    { key: 'respondents', label: 'Respondent Lookup', icon: UserSearch },
+    { key: 'list', label: isRestricted ? 'My Submissions' : 'All Submissions', icon: List },
+    ...(!isRestricted ? [
+      { key: 'table' as ActiveTab,       label: 'Table View',        icon: Table2 },
+      { key: 'respondents' as ActiveTab, label: 'Respondent Lookup', icon: UserSearch },
+    ] : []),
   ]
 
   return (
@@ -788,20 +804,26 @@ export function SubmissionsClient() {
       {/* Header */}
       <div className="flex items-start justify-between mb-5">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-tight text-gray-900">Submissions</h1>
+          <h1 className="text-[22px] font-semibold tracking-tight text-gray-900">
+            {isRestricted ? 'My Submissions' : 'Submissions'}
+          </h1>
           <p className="mt-0.5 text-[14px] text-gray-500">
-            {submissions.length} response{submissions.length !== 1 ? 's' : ''} in {currentProgram?.name}
+            {isRestricted
+              ? `${visibleSubmissions.length} submission${visibleSubmissions.length !== 1 ? 's' : ''} assigned to you`
+              : `${submissions.length} response${submissions.length !== 1 ? 's' : ''} in ${currentProgram?.name}`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {currentProgram && submissions.length > 0 && (
-            <a href={`/api/submissions/export?program_id=${currentProgram.id}`} download>
-              <Button variant="outline" size="sm" className="gap-1.5 h-8 text-[13px]">
-                <Download className="h-3.5 w-3.5" /> Export all CSV
-              </Button>
-            </a>
-          )}
-        </div>
+        {!isRestricted && (
+          <div className="flex items-center gap-2">
+            {currentProgram && submissions.length > 0 && (
+              <a href={`/api/submissions/export?program_id=${currentProgram.id}`} download>
+                <Button variant="outline" size="sm" className="gap-1.5 h-8 text-[13px]">
+                  <Download className="h-3.5 w-3.5" /> Export all CSV
+                </Button>
+              </a>
+            )}
+          </div>
+        )}
       </div>
 
       {/* To-do: pending form assignments for the logged-in user */}
@@ -842,8 +864,8 @@ export function SubmissionsClient() {
                   ))}
                 </div>
               </div>
-              {/* Bulk selection action bar */}
-              {selectedIds.size > 0 && (
+              {/* Bulk selection action bar — admin/program_admin only */}
+              {!isRestricted && selectedIds.size > 0 && (
                 <div className="flex items-center gap-3 mb-3 rounded-lg bg-orange-50 border border-orange-200 px-4 py-2.5">
                   <span className="text-[13px] font-medium text-orange-800">
                     {selectedIds.size} selected
@@ -873,20 +895,22 @@ export function SubmissionsClient() {
                 </div>
               ) : (
                 <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-                  {/* Select-all header row */}
-                  <div className="flex items-center gap-3 px-5 py-2 border-b border-gray-100 bg-gray-50">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all submissions"
-                      checked={selectedIds.size === filtered.length && filtered.length > 0}
-                      ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filtered.length }}
-                      onChange={() => toggleSelectAll(filtered.map(s => s.id))}
-                      className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
-                    />
-                    <span className="text-[11px] text-gray-400 font-medium uppercase tracking-wide">
-                      {filtered.length} submission{filtered.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
+                  {/* Select-all header row — admin only */}
+                  {!isRestricted && (
+                    <div className="flex items-center gap-3 px-5 py-2 border-b border-gray-100 bg-gray-50">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all submissions"
+                        checked={selectedIds.size === filtered.length && filtered.length > 0}
+                        ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filtered.length }}
+                        onChange={() => toggleSelectAll(filtered.map(s => s.id))}
+                        className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                      />
+                      <span className="text-[11px] text-gray-400 font-medium uppercase tracking-wide">
+                        {filtered.length} submission{filtered.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  )}
                   {filtered.map((sub, i) => {
                     const cfg = statusConfig[sub.effectiveStatus ?? sub.status] ?? statusConfig.draft
                     const submittedAt = sub.submitted_at
@@ -902,14 +926,16 @@ export function SubmissionsClient() {
                           isSelected ? 'bg-orange-50' : 'hover:bg-gray-50'
                         )}
                       >
-                        <input
-                          type="checkbox"
-                          aria-label={`Select submission from ${displayName(sub)}`}
-                          checked={isSelected}
-                          onChange={e => toggleSelect(sub.id, e as unknown as React.MouseEvent)}
-                          onClick={e => e.stopPropagation()}
-                          className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500 flex-shrink-0 cursor-pointer"
-                        />
+                        {!isRestricted && (
+                          <input
+                            type="checkbox"
+                            aria-label={`Select submission from ${displayName(sub)}`}
+                            checked={isSelected}
+                            onChange={e => toggleSelect(sub.id, e as unknown as React.MouseEvent)}
+                            onClick={e => e.stopPropagation()}
+                            className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500 flex-shrink-0 cursor-pointer"
+                          />
+                        )}
                         <button
                           onClick={() => router.push(`/submissions/${sub.id}`)}
                           className="flex items-center gap-4 flex-1 min-w-0 text-left"
