@@ -2,6 +2,7 @@
 
 import { Suspense, useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
+import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -104,11 +105,15 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-[360px]">
         <div className="mb-8 flex flex-col items-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-500 shadow-lg shadow-orange-500/25">
-            <span className="text-white font-semibold text-[13px] tracking-tight">EP</span>
-          </div>
-          <h1 className="mt-4 text-[22px] font-semibold tracking-tight text-gray-900">Extension Pulse</h1>
-          <p className="mt-1 text-[13px] text-gray-400">Sign in to your account</p>
+          <Image
+            src="/logo.png"
+            alt="Extension Pulse"
+            width={280}
+            height={79}
+            priority
+            className="mb-4"
+          />
+          <p className="text-[13px] text-gray-400">Sign in to your account</p>
         </div>
         <Suspense fallback={
           <div className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 import {
@@ -130,8 +131,19 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
       style={{ backgroundColor: SIDEBAR_BG }}
       aria-label="Sidebar"
     >
+      {/* Logo */}
+      <div className="px-4 pt-5 pb-3">
+        <Image
+          src="/logo.png"
+          alt="Extension Pulse"
+          width={160}
+          height={45}
+          priority
+        />
+      </div>
+
       {/* Program switcher */}
-      <div className="px-3 pt-4 pb-2">
+      <div className="px-3 pt-1 pb-2">
         <DropdownMenu>
           <DropdownMenuTrigger className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-zinc-800">
             <div
