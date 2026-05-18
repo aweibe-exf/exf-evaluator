@@ -152,6 +152,89 @@ export async function sendReviewerFeedbackEmail(params: {
   await sendEmail(to, subject, text, html)
 }
 
+export async function sendInviteEmail(params: {
+  to: string
+  inviteUrl: string
+  programName: string
+}): Promise<void> {
+  const { to, inviteUrl, programName } = params
+  const subject = `You've been invited to ${programName}`
+  const text = [
+    `You've been invited to join ${programName} on Extension Pulse.`,
+    '',
+    `Click the link below to accept your invitation and set up your account:`,
+    inviteUrl,
+    '',
+    `This link expires in 24 hours.`,
+  ].join('\n')
+  const html = `
+<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 16px;color:#111;">
+  <h2 style="font-size:20px;margin-bottom:8px;">You've been invited to ${programName}</h2>
+  <p style="color:#555;margin-bottom:24px;">Click below to accept your invitation and set up your account on Extension Pulse.</p>
+  <a href="${inviteUrl}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Accept invitation</a>
+  <p style="margin-top:24px;font-size:13px;color:#888;">This link expires in 24 hours.</p>
+  <p style="font-size:12px;color:#aaa;margin-top:8px;">If the button doesn't work, copy this link: ${inviteUrl}</p>
+</body></html>`
+  await sendEmail(to, subject, text, html)
+}
+
+export async function sendWelcomeWithPasswordEmail(params: {
+  to: string
+  temporaryPassword: string
+  loginUrl: string
+  programName: string
+}): Promise<void> {
+  const { to, temporaryPassword, loginUrl, programName } = params
+  const subject = `Your Extension Pulse account for ${programName}`
+  const text = [
+    `An account has been created for you on Extension Pulse for ${programName}.`,
+    '',
+    `Login: ${loginUrl}`,
+    `Email: ${to}`,
+    `Temporary password: ${temporaryPassword}`,
+    '',
+    `You can change your password after signing in.`,
+  ].join('\n')
+  const html = `
+<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 16px;color:#111;">
+  <h2 style="font-size:20px;margin-bottom:8px;">Your Extension Pulse account</h2>
+  <p style="color:#555;margin-bottom:20px;">An account has been created for you for <strong>${programName}</strong>. Use the credentials below to sign in.</p>
+  <div style="background:#f9f9f9;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:24px;font-size:14px;">
+    <p style="margin:0 0 8px;color:#555;"><strong>Email:</strong> ${to}</p>
+    <p style="margin:0;color:#555;"><strong>Temporary password:</strong> <code style="background:#efefef;padding:2px 6px;border-radius:4px;">${temporaryPassword}</code></p>
+  </div>
+  <a href="${loginUrl}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Sign in</a>
+  <p style="margin-top:24px;font-size:13px;color:#888;">We recommend changing your password after your first sign-in.</p>
+</body></html>`
+  await sendEmail(to, subject, text, html)
+}
+
+export async function sendPasswordResetEmail(params: {
+  to: string
+  resetUrl: string
+  programName: string
+}): Promise<void> {
+  const { to, resetUrl, programName } = params
+  const subject = 'Reset your Extension Pulse password'
+  const text = [
+    `A password reset was requested for your Extension Pulse account (${programName}).`,
+    '',
+    `Click the link below to set a new password:`,
+    resetUrl,
+    '',
+    `If you didn't request this, you can ignore this email.`,
+  ].join('\n')
+  const html = `
+<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 16px;color:#111;">
+  <h2 style="font-size:20px;margin-bottom:8px;">Reset your password</h2>
+  <p style="color:#555;margin-bottom:24px;">A password reset was requested for your Extension Pulse account on <strong>${programName}</strong>.</p>
+  <a href="${resetUrl}" style="display:inline-block;background:#ea580c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">Set new password</a>
+  <p style="margin-top:24px;font-size:13px;color:#888;">If you didn't request this reset, you can safely ignore this email.</p>
+  <p style="font-size:12px;color:#aaa;margin-top:8px;">If the button doesn't work, copy this link: ${resetUrl}</p>
+</body></html>`
+  await sendEmail(to, subject, text, html)
+}
+
 export async function sendReturnNotificationEmail(params: {
   to: string
   collaboratorEmail: string

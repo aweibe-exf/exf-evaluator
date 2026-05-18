@@ -2,11 +2,15 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { logAudit } from '@/lib/audit'
+import { sendInviteEmail, sendWelcomeWithPasswordEmail } from '@/lib/email'
 
 const inviteSchema = z.object({
   program_id: z.string().min(1),
   email: z.string().email(),
   role: z.enum(['super_admin', 'program_admin', 'staff', 'viewer']),
+  // 'invite' = magic link (default), 'password' = set a temp password
+  mode: z.enum(['invite', 'password']).default('invite'),
+  password: z.string().min(8).optional(),
 })
 
 export async function GET(request: Request) {
@@ -26,19 +30,27 @@ export async function GET(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Fetch user emails from auth.users via service client
+  // Fetch user emails + confirmation status from auth.users via service client
   const service = createServiceClient()
   const userIds = memberships?.map(m => m.user_id) ?? []
-  const userEmails: Record<string, string> = {}
+  const userMeta: Record<string, { email: string; email_confirmed: boolean; last_sign_in: string | null }> = {}
 
   if (userIds.length > 0) {
     const { data: { users } } = await service.auth.admin.listUsers()
-    users?.forEach(u => { userEmails[u.id] = u.email ?? '' })
+    users?.forEach(u => {
+      userMeta[u.id] = {
+        email: u.email ?? '',
+        email_confirmed: !!u.email_confirmed_at,
+        last_sign_in: u.last_sign_in_at ?? null,
+      }
+    })
   }
 
   const result = memberships?.map(m => ({
     ...m,
-    email: userEmails[m.user_id] ?? '',
+    email: userMeta[m.user_id]?.email ?? '',
+    email_confirmed: userMeta[m.user_id]?.email_confirmed ?? false,
+    last_sign_in: userMeta[m.user_id]?.last_sign_in ?? null,
   })) ?? []
 
   return NextResponse.json(result)
@@ -54,19 +66,52 @@ export async function POST(request: Request) {
   const parsed = inviteSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues }, { status: 400 })
 
-  const { program_id, email, role } = parsed.data
+  const { program_id, email, role, mode, password } = parsed.data
+
+  if (mode === 'password' && !password) {
+    return NextResponse.json({ error: 'Password is required in password mode' }, { status: 400 })
+  }
 
   // Check if user already exists in auth
   const { data: { users: existing } } = await service.auth.admin.listUsers()
   let targetUserId = existing?.find(u => u.email === email)?.id
 
+  // Fetch program name for email copy
+  const { data: program } = await supabase.from('programs').select('name').eq('id', program_id).single()
+  const programName = program?.name ?? 'Extension Pulse'
+  const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/login`
+
   if (!targetUserId) {
-    // Invite user via magic link — creates the user
-    const { data: invited, error: invErr } = await service.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-    })
-    if (invErr) return NextResponse.json({ error: invErr.message }, { status: 500 })
-    targetUserId = invited.user.id
+    if (mode === 'password') {
+      // Create confirmed user with a set password — Supabase sends no email
+      const { data: created, error: createErr } = await service.auth.admin.createUser({
+        email,
+        password: password!,
+        email_confirm: true,
+      })
+      if (createErr) return NextResponse.json({ error: createErr.message }, { status: 500 })
+      targetUserId = created.user.id
+
+      // Send welcome email with credentials via Mailgun
+      await sendWelcomeWithPasswordEmail({ to: email, temporaryPassword: password!, loginUrl, programName }).catch(err => {
+        console.error('Welcome email failed:', err)
+      })
+    } else {
+      // Generate an invite link and send it ourselves via Mailgun
+      // (avoids Supabase's rate-limited / spam-prone built-in email)
+      const { data: linkData, error: linkErr } = await service.auth.admin.generateLink({
+        type: 'invite',
+        email,
+        options: { redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback` },
+      })
+      if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 500 })
+      targetUserId = linkData.user.id
+
+      const inviteUrl = linkData.properties.action_link
+      await sendInviteEmail({ to: email, inviteUrl, programName }).catch(err => {
+        console.error('Invite email failed:', err)
+      })
+    }
   }
 
   // Upsert membership
@@ -84,7 +129,7 @@ export async function POST(request: Request) {
     action: 'user.invite',
     entityType: 'program_membership',
     entityId: data.id,
-    diff: { email, role } as Record<string, unknown>,
+    diff: { email, role, mode } as Record<string, unknown>,
     ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
   })
 
