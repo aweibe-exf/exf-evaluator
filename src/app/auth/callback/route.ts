@@ -20,12 +20,18 @@ export async function GET(request: Request) {
         .is('submitted_by', null)
 
       // Respondents (no program memberships) go to their own portal
-      const { count } = await service
+      const { data: memberships } = await service
         .from('program_memberships')
-        .select('*', { count: 'exact', head: true })
+        .select('role')
         .eq('user_id', data.user.id)
 
-      const destination = (count ?? 0) > 0 ? next : '/my'
+      if (!memberships || memberships.length === 0) {
+        return NextResponse.redirect(`${origin}/my`)
+      }
+
+      // Staff / viewer land on submissions; everyone else uses the requested `next`
+      const role = memberships[0]?.role
+      const destination = (role === 'staff' || role === 'viewer') ? '/submissions' : next
       return NextResponse.redirect(`${origin}${destination}`)
     }
   }
